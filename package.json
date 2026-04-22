@@ -1,0 +1,19 @@
+{
+  "name": "dedicated-webflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev.js",
+    "build": "vite build",
+    "deploy": "vite build && git add dist/bundle.js && git commit -m 'build: update bundle' && git push"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "localtunnel": "^2.0.2",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "cloudflared": "^0.7.1"
+  }
+}
