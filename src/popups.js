@@ -73,7 +73,7 @@ function openDeal(name) {
   staggerEls.forEach((el, i) => {
     setTimeout(() => {
       el.style.opacity   = '1';
-      el.style.transform = 'translateY(0px)';
+      el.style.transform = el.classList.contains('deal-close') ? 'translate(-50%, 0px)' : 'translateY(0px)';
     }, i * 50);
   });
 }
@@ -92,7 +92,7 @@ function closeDeal() {
     dealCloseTimer = setTimeout(() => {
       dealCloseTimer = null;
       dealEl.style.pointerEvents = 'none';
-      dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.transform = 'translateY(24px)'; });
+      dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.transform = el.classList.contains('deal-close') ? 'translate(-50%, 24px)' : 'translateY(24px)'; });
     }, DURATION);
   }
 }
@@ -111,6 +111,7 @@ function initViewToggle() {
   const grid       = document.querySelector('.grid');
   const gridList   = document.querySelector('.grid-list');
   const zoomDiv    = document.querySelector('#zoomDiv');
+  const viewDiv    = document.querySelector('#viewDiv');
   if (!indexBtn || !gridBtn) return;
 
   if (grid) grid.style.transition = 'opacity 0.4s ease';
@@ -119,6 +120,7 @@ function initViewToggle() {
     grid?.style.setProperty('opacity', '0');
     if (gridList) gridList.style.pointerEvents = 'none';
     if (zoomDiv) { zoomDiv.style.opacity = '0'; zoomDiv.style.transform = 'translateY(24px)'; zoomDiv.style.pointerEvents = 'none'; }
+    if (viewDiv) viewDiv.style.transform = 'translateX(50%)';
 
     if (indexPanel) {
       indexPanel.style.display = 'block';
@@ -152,6 +154,7 @@ function initViewToggle() {
     grid?.style.setProperty('opacity', '1');
     if (gridList) gridList.style.pointerEvents = 'auto';
     if (zoomDiv) { zoomDiv.style.opacity = '1'; zoomDiv.style.transform = 'translateY(0px)'; zoomDiv.style.pointerEvents = 'auto'; }
+    if (viewDiv) viewDiv.style.transform = 'translateX(0px)';
 
     gridBtn.classList.add('active');
     indexBtn.classList.remove('active');
@@ -212,11 +215,8 @@ function setButtonsOpacity(activeButtonId) {
 
 function initZoomCursor() {
   const btn      = document.querySelector('#zoomCursor');
-  const cursor   = btn?.querySelector('.cursor');
   const gridList = document.querySelector('.grid-list');
-  if (!btn || !cursor || !gridList) return;
-
-  gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
+  if (!btn || !gridList) return;
 
   const updateOrigin = () => {
     gridList.style.transformOrigin = `${window.innerWidth / 2}px ${window.innerHeight / 2}px`;
@@ -224,19 +224,29 @@ function initZoomCursor() {
   updateOrigin();
   window.addEventListener('resize', updateOrigin);
 
-  let zoomed = false;
+  // Initial state: dézoomé
+  gridList.style.transition = 'none';
+  gridList.style.transform  = 'scale(0.65)';
+  setZoomScale(0.65);
+  const cursor = btn.querySelector('.cursor');
+  if (cursor) cursor.style.setProperty('left', '12px', 'important');
+
+  let zoomed = true;
+
   btn.addEventListener('click', () => {
     zoomed = !zoomed;
-    const scale               = zoomed ? 0.65 : 1;
-    cursor.style.left         = zoomed ? '12px' : '42px';
+    const scale = zoomed ? 0.65 : 1;
+    gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
     gridList.style.transform  = `scale(${scale})`;
     setZoomScale(scale);
+    if (cursor) cursor.style.setProperty('left', zoomed ? '12px' : '42px', 'important');
   });
 }
 
 function setBgDim(active) {
-  const viewEl = document.querySelector(activeView === 'index' ? '.index' : '.grid');
-  const footer = document.querySelector('.footer');
+  const viewEl   = document.querySelector(activeView === 'index' ? '.index' : '.grid');
+  const footer   = document.querySelector('.footer');
+  const controls = document.querySelector('.controls');
   const opacity = active ? '0.1' : '';
   const pointer = active ? 'none' : '';
   [viewEl, footer].forEach(el => {
@@ -244,4 +254,9 @@ function setBgDim(active) {
     el.style.opacity       = opacity;
     el.style.pointerEvents = pointer;
   });
+  if (controls) {
+    controls.style.opacity       = active ? '0' : '';
+    controls.style.transform     = active ? 'translate(-50%, 24px)' : 'translate(-50%, 0px)';
+    controls.style.pointerEvents = pointer;
+  }
 }
