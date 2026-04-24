@@ -26,7 +26,10 @@ export function initLoader() {
 
   // 2. Fade out headlines en stagger
   headlines.forEach((el, i) => {
-    setTimeout(() => { el.style.opacity = '0'; }, allInAt + i * HEADLINE_STAGGER);
+    setTimeout(() => {
+      el.style.opacity   = '0';
+      el.style.transform = 'translateY(-24px)';
+    }, allInAt + i * HEADLINE_STAGGER);
   });
 
   // 3. Fade out loader après la dernière headline + sa transition

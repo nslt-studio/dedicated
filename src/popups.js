@@ -1,3 +1,5 @@
+import { setZoomScale } from './animations.js';
+
 const STAGGER = 100;
 const DURATION = 300;
 
@@ -25,6 +27,9 @@ export function initPopups() {
   });
 
   document.addEventListener('click', e => {
+    // Deal : bouton fermeture
+    if (e.target.closest('.deal-close') && activeDeal) { closeDeal(); return; }
+
     // Deal : clic sur un item
     const item = e.target.closest('.grid-item[data-deal], .index-item[data-deal]');
     if (item) {
@@ -47,6 +52,7 @@ export function initPopups() {
   });
 
   initViewToggle();
+  initZoomCursor();
 }
 
 function openDeal(name) {
@@ -57,12 +63,14 @@ function openDeal(name) {
   if (activeDeal) closeDeal();
   activeDeal = name;
 
+  setBgDim(true);
   dealEl.style.pointerEvents = 'auto';
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${name}"]`);
   if (!dealItem) return;
 
   dealItem.style.pointerEvents = 'auto';
-  dealItem.querySelectorAll('.deal-inner').forEach((el, i) => {
+  const staggerEls = [...dealItem.querySelectorAll('.deal-inner, .deal-close')];
+  staggerEls.forEach((el, i) => {
     setTimeout(() => {
       el.style.opacity   = '1';
       el.style.transform = 'translateY(0px)';
@@ -76,14 +84,15 @@ function closeDeal() {
 
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
   activeDeal = null;
+  setBgDim(false);
 
   if (dealItem) {
     dealItem.style.pointerEvents = 'none';
-    dealItem.querySelectorAll('.deal-inner').forEach(el => { el.style.opacity = '0'; });
+    dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.opacity = '0'; });
     dealCloseTimer = setTimeout(() => {
       dealCloseTimer = null;
       dealEl.style.pointerEvents = 'none';
-      dealItem.querySelectorAll('.deal-inner').forEach(el => { el.style.transform = 'translateY(24px)'; });
+      dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.transform = 'translateY(24px)'; });
     }, DURATION);
   }
 }
@@ -96,11 +105,12 @@ function closeAll() {
 }
 
 function initViewToggle() {
-  const indexBtn  = document.querySelector('#indexButton');
-  const gridBtn   = document.querySelector('#gridButton');
+  const indexBtn   = document.querySelector('#indexButton');
+  const gridBtn    = document.querySelector('#gridButton');
   const indexPanel = document.querySelector('.index');
-  const grid      = document.querySelector('.grid');
-  const gridList  = document.querySelector('.grid-list');
+  const grid       = document.querySelector('.grid');
+  const gridList   = document.querySelector('.grid-list');
+  const zoomDiv    = document.querySelector('#zoomDiv');
   if (!indexBtn || !gridBtn) return;
 
   if (grid) grid.style.transition = 'opacity 0.4s ease';
@@ -108,6 +118,7 @@ function initViewToggle() {
   indexBtn.addEventListener('click', () => {
     grid?.style.setProperty('opacity', '0');
     if (gridList) gridList.style.pointerEvents = 'none';
+    if (zoomDiv) { zoomDiv.style.opacity = '0'; zoomDiv.style.transform = 'translateY(24px)'; zoomDiv.style.pointerEvents = 'none'; }
 
     if (indexPanel) {
       indexPanel.style.display = 'block';
@@ -140,6 +151,7 @@ function initViewToggle() {
     activeView = 'grid';
     grid?.style.setProperty('opacity', '1');
     if (gridList) gridList.style.pointerEvents = 'auto';
+    if (zoomDiv) { zoomDiv.style.opacity = '1'; zoomDiv.style.transform = 'translateY(0px)'; zoomDiv.style.pointerEvents = 'auto'; }
 
     gridBtn.classList.add('active');
     indexBtn.classList.remove('active');
@@ -195,6 +207,30 @@ function setButtonsOpacity(activeButtonId) {
   Object.keys(CONFIG).forEach(id => {
     const btn = document.querySelector(id);
     if (btn) btn.style.opacity = activeButtonId && id !== activeButtonId ? '0.35' : '1';
+  });
+}
+
+function initZoomCursor() {
+  const btn      = document.querySelector('#zoomCursor');
+  const cursor   = btn?.querySelector('.cursor');
+  const gridList = document.querySelector('.grid-list');
+  if (!btn || !cursor || !gridList) return;
+
+  gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
+
+  const updateOrigin = () => {
+    gridList.style.transformOrigin = `${window.innerWidth / 2}px ${window.innerHeight / 2}px`;
+  };
+  updateOrigin();
+  window.addEventListener('resize', updateOrigin);
+
+  let zoomed = false;
+  btn.addEventListener('click', () => {
+    zoomed = !zoomed;
+    const scale               = zoomed ? 0.65 : 1;
+    cursor.style.left         = zoomed ? '12px' : '42px';
+    gridList.style.transform  = `scale(${scale})`;
+    setZoomScale(scale);
   });
 }
 

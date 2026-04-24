@@ -1,6 +1,6 @@
 const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
-const MAX_GAP        = 300;  // espace max entre items (px)
+const MAX_GAP        = 180;  // espace max entre items (px)
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -8,7 +8,7 @@ const FRICTION       = 0.95; // décroissance de la vélocité de drag par frame
 const FLOAT_RADIUS   = 30;      // rayon max du cercle de flottement (px)
 const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus lent)
 const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
-const AUTO_SCROLL    = 0.8;     // scroll automatique vers le bas (px/frame)
+const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
 
 // Canvas dimensionné pour que les items ne soient jamais à plus de MAX_GAP l'un de l'autre
 function calcCanvasSize(items, viewW, viewH) {
@@ -41,8 +41,16 @@ function gridPlacement(items, canvasW, canvasH, cols, rows) {
   });
 }
 
+let zoomScale    = 1;
+let gridInstance = null;
+
+export function setZoomScale(s) {
+  zoomScale = s;
+  gridInstance?.retile();
+}
+
 export function initAnimations() {
-  new InfiniteGrid();
+  gridInstance = new InfiniteGrid();
 }
 
 class InfiniteGrid {
@@ -60,6 +68,7 @@ class InfiniteGrid {
     this.drag             = { startX: 0, startY: 0, scrollX: 0, scrollY: 0 };
     this.dragVelocity     = { x: 0, y: 0 };
     this.inertiaVel       = { x: 0, y: 0 };
+    this.hasDragged       = false;
     this.mouse            = { x: { t: 0.5, c: 0.5 }, y: { t: 0.5, c: 0.5 }, press: { t: 0, c: 0 } };
     this.isDragging = false;
     this.items         = [];
@@ -86,6 +95,10 @@ class InfiniteGrid {
     this.$list.addEventListener('touchstart', this.onTouchStart, { passive: false });
     window.addEventListener('touchmove', this.onTouchMove, { passive: false });
     window.addEventListener('touchend', this.onTouchEnd);
+
+    this.$list.addEventListener('click', e => {
+      if (this.hasDragged) { e.stopPropagation(); this.hasDragged = false; }
+    });
 
     this.$container.style.pointerEvents = 'none';
 
@@ -182,6 +195,7 @@ class InfiniteGrid {
   onMouseDown(e) {
     e.preventDefault();
     this.isDragging   = true;
+    this.hasDragged   = false;
     this.inertiaVel   = { x: 0, y: 0 };
     this.dragVelocity = { x: 0, y: 0 };
     this.$list.style.cursor = 'grabbing';
@@ -210,6 +224,8 @@ class InfiniteGrid {
       this.dragVelocity.y = newY - this.scroll.target.y;
       this.scroll.target.x = newX;
       this.scroll.target.y = newY;
+      if (Math.abs(e.clientX - this.drag.startX) > 4 || Math.abs(e.clientY - this.drag.startY) > 4)
+        this.hasDragged = true;
     }
   }
 
@@ -259,10 +275,14 @@ class InfiniteGrid {
       const checkX = item.x + this.scroll.current.x + item.extraX + px + vx;
       const checkY = item.y + this.scroll.current.y + item.extraY + py + vy;
 
-      if (dirX === 'right' && checkX          > this.winW) item.extraX -= this.tileSize.w;
-      if (dirX === 'left'  && checkX + item.w < 0)         item.extraX += this.tileSize.w;
-      if (dirY === 'down'  && checkY          > this.winH) item.extraY -= this.tileSize.h;
-      if (dirY === 'up'    && checkY + item.h < 0)         item.extraY += this.tileSize.h;
+      const pad = zoomScale < 1 ? (1 / zoomScale - 1) / 2 : 0;
+      const bX  = this.winW * pad;
+      const bY  = this.winH * pad;
+
+      if (dirX === 'right' && checkX          > this.winW + bX) item.extraX -= this.tileSize.w;
+      if (dirX === 'left'  && checkX + item.w < -bX)            item.extraX += this.tileSize.w;
+      if (dirY === 'down'  && checkY          > this.winH + bY) item.extraY -= this.tileSize.h;
+      if (dirY === 'up'    && checkY + item.h < -bY)            item.extraY += this.tileSize.h;
 
       const angle  = ts * item.floatFreq + item.floatPhase;
       const floatX = Math.cos(angle) * item.floatRadius;
@@ -283,6 +303,7 @@ class InfiniteGrid {
     e.preventDefault();
     const t = e.touches[0];
     this.isDragging   = true;
+    this.hasDragged   = false;
     this.inertiaVel   = { x: 0, y: 0 };
     this.dragVelocity = { x: 0, y: 0 };
     this.mouse.press.t = 1;
@@ -302,6 +323,8 @@ class InfiniteGrid {
     this.dragVelocity.y = newY - this.scroll.target.y;
     this.scroll.target.x = newX;
     this.scroll.target.y = newY;
+    if (Math.abs(t.clientX - this.drag.startX) > 4 || Math.abs(t.clientY - this.drag.startY) > 4)
+      this.hasDragged = true;
   }
 
   onTouchEnd() {
@@ -309,6 +332,24 @@ class InfiniteGrid {
     this.mouse.press.t = 0;
     this.inertiaVel   = { x: this.dragVelocity.x, y: this.dragVelocity.y };
     this.dragVelocity = { x: 0, y: 0 };
+  }
+
+  retile() {
+    const pad = zoomScale < 1 ? (1 / zoomScale - 1) / 2 : 0;
+    const bX  = this.winW * pad;
+    const bY  = this.winH * pad;
+    const tw  = this.tileSize.w;
+    const th  = this.tileSize.h;
+
+    this.items.forEach(item => {
+      let px = item.x + this.scroll.current.x + item.extraX;
+      let py = item.y + this.scroll.current.y + item.extraY;
+
+      while (px          > this.winW + bX) { item.extraX -= tw; px -= tw; }
+      while (px + item.w < -bX)            { item.extraX += tw; px += tw; }
+      while (py          > this.winH + bY) { item.extraY -= th; py -= th; }
+      while (py + item.h < -bY)            { item.extraY += th; py += th; }
+    });
   }
 
   destroy() {
