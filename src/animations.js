@@ -1,6 +1,6 @@
 const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
-const MAX_GAP        = 180;  // espace max entre items (px)
+const MAX_GAP        = 240;  // espace max entre items (px)
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -10,16 +10,17 @@ const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus le
 const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
 const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
 
-// Canvas dimensionné pour que les items ne soient jamais à plus de MAX_GAP l'un de l'autre
+// Canvas dimensionné pour une couverture uniforme — grille carrée, espacement
+// horizontal réduit pour minimiser les zones vides lors du scroll latéral
 function calcCanvasSize(items, viewW, viewH) {
-  const n     = items.length;
-  const avgW  = items.reduce((s, i) => s + i.w, 0) / n;
-  const avgH  = items.reduce((s, i) => s + i.h, 0) / n;
-  const ratio = viewW / viewH;
-  const cols  = Math.ceil(Math.sqrt(n * ratio));
-  const rows  = Math.ceil(n / cols);
-  const w     = Math.max(viewW, cols * (avgW + MAX_GAP) + EDGE_MARGIN * 2);
-  const h     = Math.max(viewH, rows * (avgH + MAX_GAP) + EDGE_MARGIN * 2);
+  const n    = items.length;
+  const avgW = items.reduce((s, i) => s + i.w, 0) / n;
+  const avgH = items.reduce((s, i) => s + i.h, 0) / n;
+  const cols = Math.max(1, Math.round(Math.sqrt(n)));
+  const rows = Math.ceil(n / cols);
+  const gapH = Math.round(MAX_GAP * 0.5);
+  const w    = Math.max(viewW, cols * (avgW + gapH) + EDGE_MARGIN * 2);
+  const h    = Math.max(viewH, rows * (avgH + MAX_GAP) + EDGE_MARGIN * 2);
   return { w, h, cols, rows };
 }
 
@@ -42,11 +43,19 @@ function gridPlacement(items, canvasW, canvasH, cols, rows) {
 }
 
 let zoomScale    = 1;
+let scrollSpeed  = 1; // compensé dynamiquement : getZoomDefaults().normal / zoomScale
 let gridInstance = null;
 
 export function setZoomScale(s) {
-  zoomScale = s;
+  zoomScale    = s;
+  scrollSpeed  = getZoomDefaults().normal / s;
   gridInstance?.retile();
+}
+
+export function getZoomDefaults() {
+  return window.innerWidth <= 767
+    ? { normal: 0.75, zoomed: 0.35 }
+    : { normal: 1,    zoomed: 0.5  };
 }
 
 export function initAnimations() {
@@ -68,7 +77,8 @@ class InfiniteGrid {
     this.drag             = { startX: 0, startY: 0, scrollX: 0, scrollY: 0 };
     this.dragVelocity     = { x: 0, y: 0 };
     this.inertiaVel       = { x: 0, y: 0 };
-    this.hasDragged       = false;
+    this.hasDragged          = false;
+    this.touchStartedOnGrid  = false;
     this.mouse            = { x: { t: 0.5, c: 0.5 }, y: { t: 0.5, c: 0.5 }, press: { t: 0, c: 0 } };
     this.isDragging = false;
     this.items         = [];
@@ -100,8 +110,6 @@ class InfiniteGrid {
       if (this.hasDragged) { e.stopPropagation(); this.hasDragged = false; }
     });
 
-    this.$container.style.pointerEvents = 'none';
-
     this.onResize();
     requestAnimationFrame(this.render);
   }
@@ -110,7 +118,7 @@ class InfiniteGrid {
     this.winW = window.innerWidth;
     this.winH = window.innerHeight;
 
-    this.$list.querySelectorAll('.grid-item--clone').forEach(el => el.remove());
+    this.$list.querySelectorAll('.grid-item--clone, .grid-item--fill').forEach(el => el.remove());
     this.$list.style.cssText = '';
     [...this.$list.querySelectorAll('.grid-item')].forEach(el => { el.style.cssText = ''; });
 
@@ -123,7 +131,17 @@ class InfiniteGrid {
     const { w: tileW, h: tileH, cols, rows } = calcCanvasSize(sizes, this.winW, this.winH);
     this.tileSize = { w: tileW * 2, h: tileH * 2 };
 
-    const placed   = gridPlacement(sizes, tileW, tileH, cols, rows);
+    // Remplir toutes les cellules — cloner les items manquants pour éviter les zones vides
+    const allSizes = [...sizes];
+    while (allSizes.length < cols * rows) {
+      const src = sizes[allSizes.length % sizes.length];
+      const fill = src.el.cloneNode(true);
+      fill.classList.add('grid-item--fill');
+      this.$list.appendChild(fill);
+      allSizes.push({ el: fill, w: src.w, h: src.h });
+    }
+
+    const placed   = gridPlacement(allSizes, tileW, tileH, cols, rows);
     const baseItems = placed.map((p, i) => ({ ...p, ease: 0.5 + (i / placed.length) * 0.5 }));
 
     this.$list.style.position     = 'relative';
@@ -253,6 +271,9 @@ class InfiniteGrid {
     this.mouse.y.c     += (this.mouse.y.t     - this.mouse.y.c)     * LERP_EASE;
     this.mouse.press.c += (this.mouse.press.t - this.mouse.press.c) * 0.1;
 
+    const pad  = zoomScale < 1 ? (1 / zoomScale - 1) / 2 : 0;
+    const bX   = this.winW * pad;
+    const bY   = this.winH * pad;
     const dirX = this.scroll.current.x >= this.scroll.last.x ? 'right' : 'left';
     const dirY = this.scroll.current.y >= this.scroll.last.y ? 'down'  : 'up';
 
@@ -272,17 +293,13 @@ class InfiniteGrid {
       const vx = 5 * this.scroll.delta.x.c * item.ease;
       const vy = 5 * this.scroll.delta.y.c * item.ease;
 
-      const checkX = item.x + this.scroll.current.x + item.extraX + px + vx;
-      const checkY = item.y + this.scroll.current.y + item.extraY + py + vy;
+      let checkX = item.x + this.scroll.current.x + item.extraX + px + vx;
+      let checkY = item.y + this.scroll.current.y + item.extraY + py + vy;
 
-      const pad = zoomScale < 1 ? (1 / zoomScale - 1) / 2 : 0;
-      const bX  = this.winW * pad;
-      const bY  = this.winH * pad;
-
-      if (dirX === 'right' && checkX          > this.winW + bX) item.extraX -= this.tileSize.w;
-      if (dirX === 'left'  && checkX + item.w < -bX)            item.extraX += this.tileSize.w;
-      if (dirY === 'down'  && checkY          > this.winH + bY) item.extraY -= this.tileSize.h;
-      if (dirY === 'up'    && checkY + item.h < -bY)            item.extraY += this.tileSize.h;
+      if (dirX === 'right') { while (checkX          > this.winW + bX) { item.extraX -= this.tileSize.w; checkX -= this.tileSize.w; } }
+      if (dirX === 'left')  { while (checkX + item.w < -bX)            { item.extraX += this.tileSize.w; checkX += this.tileSize.w; } }
+      if (dirY === 'down')  { while (checkY          > this.winH + bY) { item.extraY -= this.tileSize.h; checkY -= this.tileSize.h; } }
+      if (dirY === 'up')    { while (checkY + item.h < -bY)            { item.extraY += this.tileSize.h; checkY += this.tileSize.h; } }
 
       const angle  = ts * item.floatFreq + item.floatPhase;
       const floatX = Math.cos(angle) * item.floatRadius;
@@ -302,6 +319,7 @@ class InfiniteGrid {
   onTouchStart(e) {
     e.preventDefault();
     const t = e.touches[0];
+    this.touchStartedOnGrid = true;
     this.isDragging   = true;
     this.hasDragged   = false;
     this.inertiaVel   = { x: 0, y: 0 };
@@ -317,8 +335,8 @@ class InfiniteGrid {
     if (!this.isDragging) return;
     e.preventDefault();
     const t = e.touches[0];
-    const newX = this.drag.scrollX + (t.clientX - this.drag.startX);
-    const newY = this.drag.scrollY + (t.clientY - this.drag.startY);
+    const newX = this.drag.scrollX + (t.clientX - this.drag.startX) * scrollSpeed;
+    const newY = this.drag.scrollY + (t.clientY - this.drag.startY) * scrollSpeed;
     this.dragVelocity.x = newX - this.scroll.target.x;
     this.dragVelocity.y = newY - this.scroll.target.y;
     this.scroll.target.x = newX;
@@ -327,11 +345,18 @@ class InfiniteGrid {
       this.hasDragged = true;
   }
 
-  onTouchEnd() {
-    this.isDragging   = false;
-    this.mouse.press.t = 0;
-    this.inertiaVel   = { x: this.dragVelocity.x, y: this.dragVelocity.y };
-    this.dragVelocity = { x: 0, y: 0 };
+  onTouchEnd(e) {
+    const startedOnGrid     = this.touchStartedOnGrid;
+    this.touchStartedOnGrid = false;
+    this.isDragging         = false;
+    this.mouse.press.t      = 0;
+    this.inertiaVel         = { x: this.dragVelocity.x, y: this.dragVelocity.y };
+    this.dragVelocity       = { x: 0, y: 0 };
+    if (startedOnGrid && !this.hasDragged) {
+      const touch  = e.changedTouches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (target) target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: touch.clientX, clientY: touch.clientY }));
+    }
   }
 
   retile() {
