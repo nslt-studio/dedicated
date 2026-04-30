@@ -1,6 +1,7 @@
 const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
-const MAX_GAP        = 240;  // espace max entre items (px)
+const MAX_GAP_X      = 80;  // espace max entre items axe horizontal (px)
+const MAX_GAP_Y      = 80;  // espace max entre items axe vertical (px)
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -10,17 +11,14 @@ const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus le
 const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
 const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
 
-// Canvas dimensionné pour une couverture uniforme — grille carrée, espacement
-// horizontal réduit pour minimiser les zones vides lors du scroll latéral
 function calcCanvasSize(items, viewW, viewH) {
   const n    = items.length;
   const avgW = items.reduce((s, i) => s + i.w, 0) / n;
   const avgH = items.reduce((s, i) => s + i.h, 0) / n;
   const cols = Math.max(1, Math.round(Math.sqrt(n)));
   const rows = Math.ceil(n / cols);
-  const gapH = Math.round(MAX_GAP * 0.5);
-  const w    = Math.max(viewW, cols * (avgW + gapH) + EDGE_MARGIN * 2);
-  const h    = Math.max(viewH, rows * (avgH + MAX_GAP) + EDGE_MARGIN * 2);
+  const w    = Math.max(viewW, cols * (avgW + MAX_GAP_X) + EDGE_MARGIN * 2);
+  const h    = Math.max(viewH, rows * (avgH + MAX_GAP_Y) + EDGE_MARGIN * 2);
   return { w, h, cols, rows };
 }
 
