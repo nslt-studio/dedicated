@@ -1,7 +1,7 @@
 const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
-const MAX_GAP_X      = 80;  // espace max entre items axe horizontal (px)
-const MAX_GAP_Y      = 80;  // espace max entre items axe vertical (px)
+const MAX_GAP_X      = 140;  // espace max entre items axe horizontal (px)
+const MAX_GAP_Y      = 100;  // espace max entre items axe vertical (px)
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -22,21 +22,22 @@ function calcCanvasSize(items, viewW, viewH) {
   return { w, h, cols, rows };
 }
 
-// Placement dans une grille de cellules — chaque item est positionné
-// aléatoirement dans sa cellule, garantissant un écart max de MAX_GAP
+// Placement dans une grille — pad = FLOAT_RADIUS de chaque côté de la cellule
+// garantit un écart min de 2×FLOAT_RADIUS entre items adjacents (pas de chevauchement au flottement)
 function gridPlacement(items, canvasW, canvasH, cols, rows) {
   const cellW    = (canvasW - EDGE_MARGIN * 2) / cols;
   const cellH    = (canvasH - EDGE_MARGIN * 2) / rows;
   const shuffled = [...items].sort(() => Math.random() - 0.5);
+  const pad      = FLOAT_RADIUS;
 
   return shuffled.map((item, i) => {
-    const col   = i % cols;
-    const row   = Math.floor(i / cols);
-    const cellX = EDGE_MARGIN + col * cellW;
-    const cellY = EDGE_MARGIN + row * cellH;
-    const rangeX = Math.max(0, cellW - item.w);
-    const rangeY = Math.max(0, cellH - item.h);
-    return { ...item, x: cellX + Math.random() * rangeX, y: cellY + Math.random() * rangeY };
+    const col    = i % cols;
+    const row    = Math.floor(i / cols);
+    const cellX  = EDGE_MARGIN + col * cellW;
+    const cellY  = EDGE_MARGIN + row * cellH;
+    const rangeX = Math.max(0, cellW - item.w - pad * 2);
+    const rangeY = Math.max(0, cellH - item.h - pad * 2);
+    return { ...item, x: cellX + pad + Math.random() * rangeX, y: cellY + pad + Math.random() * rangeY };
   });
 }
 
