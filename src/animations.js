@@ -2,6 +2,8 @@ const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
 const MAX_GAP_X      = 140;  // espace max entre items axe horizontal (px)
 const MAX_GAP_Y      = 100;  // espace max entre items axe vertical (px)
+const MAX_GAP_X_MOB  = 60;   // idem mobile
+const MAX_GAP_Y_MOB  = 40;   // idem mobile
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -17,8 +19,11 @@ function calcCanvasSize(items, viewW, viewH) {
   const avgH = items.reduce((s, i) => s + i.h, 0) / n;
   const cols = Math.max(1, Math.round(Math.sqrt(n)));
   const rows = Math.ceil(n / cols);
-  const w    = Math.max(viewW, cols * (avgW + MAX_GAP_X) + EDGE_MARGIN * 2);
-  const h    = Math.max(viewH, rows * (avgH + MAX_GAP_Y) + EDGE_MARGIN * 2);
+  const mob  = viewW <= 767;
+  const gapX = mob ? MAX_GAP_X_MOB : MAX_GAP_X;
+  const gapY = mob ? MAX_GAP_Y_MOB : MAX_GAP_Y;
+  const w    = Math.max(viewW, cols * (avgW + gapX) + EDGE_MARGIN * 2);
+  const h    = Math.max(viewH, rows * (avgH + gapY) + EDGE_MARGIN * 2);
   return { w, h, cols, rows };
 }
 
@@ -44,6 +49,12 @@ function gridPlacement(items, canvasW, canvasH, cols, rows) {
 let zoomScale    = 1;
 let scrollSpeed  = 1; // compensé dynamiquement : getZoomDefaults().normal / zoomScale
 let gridInstance = null;
+let frozenByHover = false;
+let frozenByDeal  = false;
+
+export function setDealFrozen(frozen) {
+  frozenByDeal = frozen;
+}
 
 export function setZoomScale(s) {
   zoomScale    = s;
@@ -53,8 +64,8 @@ export function setZoomScale(s) {
 
 export function getZoomDefaults() {
   return window.innerWidth <= 767
-    ? { normal: 0.75, zoomed: 0.35 }
-    : { normal: 1,    zoomed: 0.5  };
+    ? { normal: 0.60, zoomed: 0.2 }
+    : { normal: 1,    zoomed: 0.4  };
 }
 
 export function initAnimations() {
@@ -107,6 +118,15 @@ class InfiniteGrid {
 
     this.$list.addEventListener('click', e => {
       if (this.hasDragged) { e.stopPropagation(); this.hasDragged = false; }
+    });
+
+    this.$list.addEventListener('mouseover', e => {
+      if (e.target.closest('.grid-item') && !e.relatedTarget?.closest('.grid-item'))
+        frozenByHover = true;
+    });
+    this.$list.addEventListener('mouseout', e => {
+      if (e.target.closest('.grid-item') && !e.relatedTarget?.closest('.grid-item'))
+        frozenByHover = false;
     });
 
     this.onResize();
@@ -254,8 +274,10 @@ class InfiniteGrid {
       this.scroll.target.y += this.inertiaVel.y;
       this.inertiaVel.x *= FRICTION;
       this.inertiaVel.y *= FRICTION;
-      const blend = Math.max(0, 1 - Math.abs(this.inertiaVel.y) / (AUTO_SCROLL * 2));
-      this.scroll.target.y -= AUTO_SCROLL * blend;
+      if (!(frozenByHover || frozenByDeal)) {
+        const blend = Math.max(0, 1 - Math.abs(this.inertiaVel.y) / (AUTO_SCROLL * 2));
+        this.scroll.target.y -= AUTO_SCROLL * blend;
+      }
     }
 
     this.scroll.current.x += (this.scroll.target.x - this.scroll.current.x) * SCROLL_EASE;

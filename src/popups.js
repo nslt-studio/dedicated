@@ -1,4 +1,4 @@
-import { setZoomScale, getZoomDefaults } from './animations.js';
+import { setZoomScale, getZoomDefaults, setDealFrozen } from './animations.js';
 
 const STAGGER = 100;
 const DURATION = 300;
@@ -42,10 +42,10 @@ export function initPopups() {
     const item = target.closest('.grid-item[data-deal], .index-item[data-deal]');
     if (item) { openDeal(item.dataset.deal); return; }
 
-    // Deal : clic en dehors
+    // Deal : clic en dehors du deal-item actif
     if (activeDeal) {
-      const dealEl = document.querySelector('.deal');
-      if (dealEl && !dealEl.contains(target)) closeDeal();
+      const dealItemEl = document.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
+      if (dealItemEl && !dealItemEl.contains(target)) closeDeal();
     }
 
     // Popups : clic en dehors
@@ -107,6 +107,7 @@ function openDeal(name) {
   if (activeDeal) closeDeal();
   activeDeal = name;
 
+  setDealFrozen(true);
   setBgDim(true);
   dealEl.style.pointerEvents = 'auto';
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${name}"]`);
@@ -128,6 +129,7 @@ function closeDeal() {
 
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
   activeDeal = null;
+  setDealFrozen(false);
   setBgDim(false);
 
   if (dealItem) {
@@ -146,6 +148,7 @@ function closeAll() {
   activeId = null;
   setButtonsOpacity(null);
   setBgDim(false);
+  setNavInvert(true);
 }
 
 function initViewToggle() {
@@ -218,6 +221,7 @@ function onButtonClick(id) {
   activeId = id;
   setButtonsOpacity(id);
   setBgDim(true);
+  setNavInvert(false);
   animateIn(id);
 }
 
@@ -262,7 +266,11 @@ function setButtonsOpacity(activeButtonId) {
 function initZoomCursor() {
   const btn      = document.querySelector('#zoomCursor');
   const gridList = document.querySelector('.grid-list');
+  const cursor   = btn?.querySelector('.cursor');
   if (!btn || !gridList) return;
+
+  const CURSOR_MIN = 0;
+  const CURSOR_MAX = 54;
 
   const updateOrigin = () => {
     gridList.style.transformOrigin = `${window.innerWidth / 2}px ${window.innerHeight / 2}px`;
@@ -270,26 +278,61 @@ function initZoomCursor() {
   updateOrigin();
   window.addEventListener('resize', updateOrigin);
 
-  const cursor = btn.querySelector('.cursor');
-  if (cursor) cursor.style.setProperty('left', '12px', 'important');
-
   const { normal, zoomed: zoomedScale } = getZoomDefaults();
-  let zoomed = false;
 
-  // Appliquer le scale initial (mobile : 0.75, desktop : 1)
   if (normal !== 1) {
     gridList.style.transform = `scale(${normal})`;
     setZoomScale(normal);
   }
 
-  btn.addEventListener('click', () => {
-    zoomed = !zoomed;
-    const scale = zoomed ? zoomedScale : normal;
-    gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
-    gridList.style.transform  = `scale(${scale})`;
+  let cursorLeft    = CURSOR_MIN;
+  let dragging      = false;
+  let dragStartX    = 0;
+  let dragStartLeft = CURSOR_MIN;
+
+  if (cursor) cursor.style.setProperty('left', `${CURSOR_MIN}px`, 'important');
+
+  function applyLeft(left) {
+    cursorLeft    = Math.max(CURSOR_MIN, Math.min(CURSOR_MAX, left));
+    const t       = (cursorLeft - CURSOR_MIN) / (CURSOR_MAX - CURSOR_MIN);
+    const scale   = normal + t * (zoomedScale - normal);
+    gridList.style.transform = `scale(${scale})`;
     setZoomScale(scale);
-    if (cursor) cursor.style.setProperty('left', zoomed ? '42px' : '12px', 'important');
-  });
+    if (cursor) cursor.style.setProperty('left', `${cursorLeft}px`, 'important');
+  }
+
+  function startDrag(clientX) {
+    const rect = btn.getBoundingClientRect();
+    applyLeft(clientX - rect.left);
+    dragging      = true;
+    dragStartX    = clientX;
+    dragStartLeft = cursorLeft;
+    gridList.style.transition = 'none';
+  }
+
+  function moveDrag(clientX) {
+    if (!dragging) return;
+    applyLeft(dragStartLeft + (clientX - dragStartX));
+  }
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
+  }
+
+  btn.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientX); });
+  window.addEventListener('mousemove', e => moveDrag(e.clientX));
+  window.addEventListener('mouseup', endDrag);
+
+  btn.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientX); }, { passive: false });
+  window.addEventListener('touchmove', e => { if (dragging) { e.preventDefault(); moveDrag(e.touches[0].clientX); } }, { passive: false });
+  window.addEventListener('touchend', endDrag);
+}
+
+function setNavInvert(inverted) {
+  const nav = document.querySelector('.nav');
+  if (nav) nav.style.filter = inverted ? 'invert(100%)' : 'invert(0%)';
 }
 
 function setBgDim(active) {
