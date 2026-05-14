@@ -14,6 +14,7 @@ let activeView     = 'grid'; // 'grid' | 'index'
 let activeDeal     = null;
 let dealCloseTimer = null;
 let touchEndHandled = false;
+let resetFilters    = null;
 
 export function initPopups() {
   // Bloque tous les descendants de .grid (pointer-events: none ne cascade pas naturellement)
@@ -97,6 +98,8 @@ export function initPopups() {
 
   initViewToggle();
   initZoomCursor();
+  initFilterTags();
+  initFiltersPanel();
 }
 
 function openDeal(name) {
@@ -117,8 +120,9 @@ function openDeal(name) {
   const staggerEls = [...dealItem.querySelectorAll('.deal-inner, .deal-close')];
   staggerEls.forEach((el, i) => {
     setTimeout(() => {
-      el.style.opacity   = '1';
-      el.style.transform = el.classList.contains('deal-close') ? 'translate(-50%, 0px)' : 'translateY(0px)';
+      el.style.opacity       = '1';
+      el.style.transform     = el.classList.contains('deal-close') ? 'translate(-50%, 0px)' : 'translateY(0px)';
+      el.style.pointerEvents = 'auto';
     }, i * 50);
   });
 }
@@ -134,7 +138,7 @@ function closeDeal() {
 
   if (dealItem) {
     dealItem.style.pointerEvents = 'none';
-    dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.opacity = '0'; });
+    dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });
     dealCloseTimer = setTimeout(() => {
       dealCloseTimer = null;
       dealEl.style.pointerEvents = 'none';
@@ -158,24 +162,39 @@ function initViewToggle() {
   const grid       = document.querySelector('.grid');
   const gridList   = document.querySelector('.grid-list');
   const zoomDiv    = document.querySelector('#zoomDiv');
-  const viewDiv    = document.querySelector('#viewDiv');
+  const filtersDiv = document.querySelector('#filtersDiv');
   if (!indexBtn || !gridBtn) return;
 
   if (grid) grid.style.transition = 'opacity 0.4s ease';
 
+  let indexCloseTimer = null;
+
   indexBtn.addEventListener('click', () => {
+    if (indexCloseTimer) { clearTimeout(indexCloseTimer); indexCloseTimer = null; }
+
     grid?.style.setProperty('opacity', '0');
     grid?.classList.add('grid-dimmed');
     if (gridList) gridList.style.pointerEvents = 'none';
     if (zoomDiv) { zoomDiv.style.opacity = '0'; zoomDiv.style.transform = 'translateY(24px)'; zoomDiv.style.pointerEvents = 'none'; }
-    if (viewDiv) viewDiv.style.transform = 'translateX(50%)';
+    if (filtersDiv) { filtersDiv.style.opacity = '1'; filtersDiv.style.transform = 'translateY(0%)'; filtersDiv.style.pointerEvents = 'auto'; }
 
     if (indexPanel) {
       indexPanel.style.display = 'block';
-      indexPanel.querySelectorAll('.index-item').forEach((item, i) => {
+      resetFilters?.();
+      const items = [...indexPanel.querySelectorAll('.index-item')];
+      // Reset to initial state instantly before animating in
+      items.forEach(item => {
+        item.style.transition = 'none';
+        item.style.opacity    = '0';
+        item.style.transform  = 'translateY(24px)';
+      });
+      indexPanel.offsetHeight;
+      items.forEach(item => { item.style.transition = ''; });
+      items.forEach((item, i) => {
         setTimeout(() => {
-          item.style.opacity = '1';
-          item.style.transform = 'translateY(0px)';
+          item.style.opacity       = '1';
+          item.style.transform     = 'translateY(0px)';
+          item.style.pointerEvents = 'auto';
         }, i * 50);
       });
     }
@@ -188,9 +207,11 @@ function initViewToggle() {
   gridBtn.addEventListener('click', () => {
     if (indexPanel) {
       indexPanel.querySelectorAll('.index-item').forEach(item => {
-        item.style.opacity = '0';
+        item.style.opacity       = '0';
+        item.style.pointerEvents = 'none';
       });
-      setTimeout(() => {
+      indexCloseTimer = setTimeout(() => {
+        indexCloseTimer = null;
         indexPanel.style.display = 'none';
         indexPanel.querySelectorAll('.index-item').forEach(item => {
           item.style.transform = 'translateY(24px)';
@@ -203,7 +224,7 @@ function initViewToggle() {
     if (!activeId && !activeDeal) grid?.classList.remove('grid-dimmed');
     if (gridList) gridList.style.pointerEvents = 'auto';
     if (zoomDiv) { zoomDiv.style.opacity = '1'; zoomDiv.style.transform = 'translateY(0px)'; zoomDiv.style.pointerEvents = 'auto'; }
-    if (viewDiv) viewDiv.style.transform = 'translateX(0px)';
+    if (filtersDiv) { filtersDiv.style.opacity = '0'; filtersDiv.style.transform = 'translateY(-100%)'; filtersDiv.style.pointerEvents = 'none'; }
 
     gridBtn.classList.add('active');
     indexBtn.classList.remove('active');
@@ -233,8 +254,9 @@ function animateIn(id) {
   panelEl.style.pointerEvents = 'auto';
   panelEl.querySelectorAll(items).forEach((item, i) => {
     setTimeout(() => {
-      item.style.opacity = '1';
-      item.style.transform = 'translateY(0px)';
+      item.style.opacity       = '1';
+      item.style.transform     = 'translateY(0px)';
+      item.style.pointerEvents = 'auto';
     }, i * STAGGER);
   });
 }
@@ -245,7 +267,8 @@ function closePanel(id) {
   if (!panelEl) return;
 
   panelEl.querySelectorAll(items).forEach(item => {
-    item.style.opacity = '0';
+    item.style.opacity       = '0';
+    item.style.pointerEvents = 'none';
   });
 
   setTimeout(() => {
@@ -330,6 +353,143 @@ function initZoomCursor() {
   window.addEventListener('touchend', endDrag);
 }
 
+function initFilterTags() {
+  document.querySelectorAll('.index-item[data-deal]').forEach(indexItem => {
+    const gridItem = document.querySelector(`.grid-item[data-deal="${indexItem.dataset.deal}"]`);
+    if (!gridItem) return;
+    const tags = [...gridItem.querySelectorAll('.tags-list .tags-item p')]
+      .map(p => p.textContent.trim())
+      .filter(Boolean);
+    if (tags.length) indexItem.setAttribute('filter-tag', tags.join(', '));
+  });
+}
+
+function initFiltersPanel() {
+  const btn        = document.querySelector('#filtersButton');
+  const filtersDiv = document.querySelector('#filtersDiv');
+  const panel      = document.querySelector('.filters');
+  if (!btn || !panel) return;
+
+  const innerItems = [...panel.querySelectorAll('.filters-inner')];
+  const label      = btn.querySelector('p') || btn;
+
+  let isOpen = false;
+
+  function openFilters() {
+    isOpen = true;
+    panel.style.pointerEvents = 'auto';
+    [...innerItems].reverse().forEach((el, i) => {
+      setTimeout(() => {
+        el.style.opacity       = '1';
+        el.style.transform     = 'translateY(0px)';
+        el.style.pointerEvents = 'auto';
+      }, i * STAGGER);
+    });
+    label.textContent = 'Hide Filters';
+    filtersDiv.style.filter = 'invert(100%)';
+  }
+
+  function closeFilters() {
+    isOpen = false;
+    innerItems.forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });
+    setTimeout(() => {
+      panel.style.pointerEvents = 'none';
+      innerItems.forEach(el => { el.style.transform = 'translateY(24px)'; });
+    }, DURATION);
+    label.textContent = 'Show Filters';
+    filtersDiv.style.filter = 'invert(0%)';
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    isOpen ? closeFilters() : openFilters();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && isOpen) closeFilters();
+  });
+
+  document.addEventListener('click', e => {
+    if (isOpen && !panel.contains(e.target) && e.target !== btn) closeFilters();
+  });
+
+  // Filter buttons
+  const filterBtns = [...panel.querySelectorAll('[data-filter]')];
+  let activeFilter  = null;
+
+  function filterText(b) { return b.textContent.trim(); }
+
+  function itemMatchesFilter(item, text) {
+    return ['filter-maturity', 'filter-status', 'filter-tag'].some(attr => {
+      return (item.getAttribute(attr) || '').split(',').map(s => s.trim()).includes(text);
+    });
+  }
+
+  // Masquer les tags-filter-item sans résultats
+  const allIndexItems = [...document.querySelectorAll('.index-item')];
+  filterBtns.forEach(b => {
+    const hasMatch = allIndexItems.some(item => itemMatchesFilter(item, filterText(b)));
+    if (!hasMatch) {
+      const tagItem = b.closest('.tags-filter-item');
+      if (tagItem) tagItem.style.display = 'none';
+    }
+  });
+
+  function setButtonsHighlight(hoverText) {
+    const hasHighlight = hoverText || activeFilter;
+    filterBtns.forEach(b => {
+      const t = filterText(b);
+      b.style.opacity = (!hasHighlight || t === hoverText || t === activeFilter) ? '1' : '0.5';
+    });
+  }
+
+  let itemHeights = null;
+
+  function ensureHeights() {
+    if (itemHeights) return;
+    itemHeights = new Map();
+    document.querySelectorAll('.index-item').forEach(item => {
+      const h = item.offsetHeight;
+      itemHeights.set(item, h);
+      item.style.overflow   = 'hidden';
+      item.style.transition = 'none';
+      item.style.height     = `${h}px`;
+      item.offsetHeight;
+      item.style.transition = '';
+    });
+  }
+
+  function setItemsFilter(text) {
+    ensureHeights();
+    document.querySelectorAll('.index-item').forEach(item => {
+      const matches = !text || itemMatchesFilter(item, text);
+      item.style.overflow      = 'hidden';
+      item.style.height        = matches ? `${itemHeights.get(item)}px` : '0px';
+      item.style.opacity       = matches ? '1' : '0';
+      item.style.pointerEvents = matches ? 'auto' : 'none';
+    });
+  }
+
+  filterBtns.forEach(b => {
+    b.addEventListener('mouseover', () => setButtonsHighlight(filterText(b)));
+    b.addEventListener('mouseout',  () => setButtonsHighlight(activeFilter));
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const text = filterText(b);
+      activeFilter = activeFilter === text ? null : text;
+      setButtonsHighlight(activeFilter);
+      setItemsFilter(activeFilter);
+    });
+  });
+
+  resetFilters = () => {
+    if (isOpen) closeFilters();
+    activeFilter = null;
+    setButtonsHighlight(null);
+    setItemsFilter(null);
+  };
+}
+
 function setNavInvert(inverted) {
   const nav = document.querySelector('.nav');
   if (nav) nav.style.filter = inverted ? 'invert(100%)' : 'invert(0%)';
@@ -349,6 +509,9 @@ function setBgDim(active) {
   });
   // .grid et tous ses descendants bloqués via classe CSS quand popup ouverte ou vue index
   if (grid) grid.classList.toggle('grid-dimmed', !!(active || activeView === 'index'));
+  // .index et tous ses descendants bloqués quand un panel/deal est ouvert en vue liste
+  const indexEl = document.querySelector('.index');
+  if (indexEl) indexEl.classList.toggle('grid-dimmed', !!(active && activeView === 'index'));
   if (controls) {
     controls.style.opacity       = active ? '0' : '';
     controls.style.transform     = active ? 'translate(-50%, 24px)' : 'translate(-50%, 0px)';
