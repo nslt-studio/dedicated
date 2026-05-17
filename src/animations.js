@@ -27,12 +27,41 @@ function calcCanvasSize(items, viewW, viewH) {
   return { w, h, cols, rows };
 }
 
+function dedupeAdjacent(arr, cols) {
+  const getId = item => item.el.dataset.deal || '';
+
+  function conflicts(i, id) {
+    for (let d = 1; d <= 2; d++) {
+      if (i % cols >= d && getId(arr[i - d]) === id) return true;
+      if (i >= cols * d && getId(arr[i - cols * d]) === id) return true;
+    }
+    return false;
+  }
+
+  for (let pass = 0; pass < 50; pass++) {
+    let hadConflict = false;
+    for (let i = 0; i < arr.length; i++) {
+      const id = getId(arr[i]);
+      if (!id || !conflicts(i, id)) continue;
+      hadConflict = true;
+      for (let j = i + 1; j < arr.length; j++) {
+        const jId = getId(arr[j]);
+        if (jId === id || conflicts(i, jId)) continue;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        break;
+      }
+    }
+    if (!hadConflict) break;
+  }
+}
+
 // Placement dans une grille — pad = FLOAT_RADIUS de chaque côté de la cellule
 // garantit un écart min de 2×FLOAT_RADIUS entre items adjacents (pas de chevauchement au flottement)
 function gridPlacement(items, canvasW, canvasH, cols, rows) {
   const cellW    = (canvasW - EDGE_MARGIN * 2) / cols;
   const cellH    = (canvasH - EDGE_MARGIN * 2) / rows;
   const shuffled = [...items].sort(() => Math.random() - 0.5);
+  dedupeAdjacent(shuffled, cols);
   const pad      = FLOAT_RADIUS;
 
   return shuffled.map((item, i) => {

@@ -113,6 +113,7 @@ function openDeal(name) {
   setDealFrozen(true);
   setBgDim(true);
   dealEl.style.pointerEvents = 'auto';
+  dealEl.querySelectorAll('.deal-item').forEach(el => { el.style.pointerEvents = 'none'; });
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${name}"]`);
   if (!dealItem) return;
 
