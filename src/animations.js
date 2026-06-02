@@ -2,8 +2,8 @@ const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
 const MAX_GAP_X      = 140;  // espace max entre items axe horizontal (px)
 const MAX_GAP_Y      = 100;  // espace max entre items axe vertical (px)
-const MAX_GAP_X_MOB  = 60;   // idem mobile
-const MAX_GAP_Y_MOB  = 40;   // idem mobile
+const MAX_GAP_X_MOB  = 60;   // mobile
+const MAX_GAP_Y_MOB  = 40;   // mobile
 const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
 const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
 const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
@@ -12,6 +12,7 @@ const FLOAT_RADIUS   = 30;      // rayon max du cercle de flottement (px)
 const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus lent)
 const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
 const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
+const PRIORITY_COUNT = 6;       // nb de premiers items à placer dans la zone visible
 
 function calcCanvasSize(items, viewW, viewH) {
   const n    = items.length;
@@ -57,14 +58,38 @@ function dedupeAdjacent(arr, cols) {
 
 // Placement dans une grille — pad = FLOAT_RADIUS de chaque côté de la cellule
 // garantit un écart min de 2×FLOAT_RADIUS entre items adjacents (pas de chevauchement au flottement)
-function gridPlacement(items, canvasW, canvasH, cols, rows) {
-  const cellW    = (canvasW - EDGE_MARGIN * 2) / cols;
-  const cellH    = (canvasH - EDGE_MARGIN * 2) / rows;
-  const shuffled = [...items].sort(() => Math.random() - 0.5);
-  dedupeAdjacent(shuffled, cols);
-  const pad      = FLOAT_RADIUS;
+// Les `priorityCount` premiers items sont placés en priorité dans les cellules visibles à l'écran.
+function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priorityCount = 0) {
+  const cellW = (canvasW - EDGE_MARGIN * 2) / cols;
+  const cellH = (canvasH - EDGE_MARGIN * 2) / rows;
+  const pad   = FLOAT_RADIUS;
 
-  return shuffled.map((item, i) => {
+  // Sépare les items prioritaires (premiers de la liste DOM) du reste
+  const priority = items.slice(0, priorityCount).sort(() => Math.random() - 0.5);
+  const rest     = items.slice(priorityCount).sort(() => Math.random() - 0.5);
+
+  // Identifie les positions de cellule visibles au chargement (scroll=0)
+  const visiblePos = [];
+  const otherPos   = [];
+  for (let i = 0; i < items.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    if (EDGE_MARGIN + col * cellW < viewW && EDGE_MARGIN + row * cellH < viewH) {
+      visiblePos.push(i);
+    } else {
+      otherPos.push(i);
+    }
+  }
+
+  // Assigne : items prioritaires → positions visibles d'abord, puis autres
+  const positions = [...visiblePos, ...otherPos];
+  const ordered   = [...priority, ...rest];
+  const assigned  = new Array(items.length);
+  for (let i = 0; i < ordered.length; i++) assigned[positions[i]] = ordered[i];
+
+  dedupeAdjacent(assigned, cols);
+
+  return assigned.map((item, i) => {
     const col    = i % cols;
     const row    = Math.floor(i / cols);
     const cellX  = EDGE_MARGIN + col * cellW;
@@ -189,7 +214,7 @@ class InfiniteGrid {
       allSizes.push({ el: fill, w: src.w, h: src.h });
     }
 
-    const placed   = gridPlacement(allSizes, tileW, tileH, cols, rows);
+    const placed   = gridPlacement(allSizes, tileW, tileH, cols, rows, this.winW, this.winH, PRIORITY_COUNT);
     const baseItems = placed.map((p, i) => ({ ...p, ease: 0.5 + (i / placed.length) * 0.5 }));
 
     this.$list.style.position     = 'relative';

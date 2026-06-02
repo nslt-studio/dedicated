@@ -13,8 +13,9 @@ let activeId       = null;
 let activeView     = 'grid'; // 'grid' | 'index'
 let activeDeal     = null;
 let dealCloseTimer = null;
-let touchEndHandled = false;
-let resetFilters    = null;
+let touchEndHandled  = false;
+let resetFilters     = null;
+let resetAccordion   = null;
 
 export function initPopups() {
   // Bloque tous les descendants de .grid (pointer-events: none ne cascade pas naturellement)
@@ -100,6 +101,7 @@ export function initPopups() {
   initZoomCursor();
   initFilterTags();
   initFiltersPanel();
+  initAboutAccordion();
 }
 
 function openDeal(name) {
@@ -266,6 +268,8 @@ function closePanel(id) {
   const { panel, items } = CONFIG[id];
   const panelEl = document.querySelector(panel);
   if (!panelEl) return;
+
+  if (id === '#aboutButton') resetAccordion?.();
 
   panelEl.querySelectorAll(items).forEach(item => {
     item.style.opacity       = '0';
@@ -488,6 +492,53 @@ function initFiltersPanel() {
     activeFilter = null;
     setButtonsHighlight(null);
     setItemsFilter(null);
+  };
+}
+
+function initAboutAccordion() {
+  const btn       = document.querySelector('.about .more-button');
+  const accordion = document.querySelector('.about .accordion');
+  if (!btn || !accordion) return;
+
+  const label = btn.querySelector('p') || btn;
+  let isOpen  = false;
+
+  accordion.style.overflow   = 'hidden';
+  accordion.style.maxHeight  = '0px';
+  //accordion.style.transition = 'max-height 0.4s ease';
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    isOpen = !isOpen;
+    if (isOpen) {
+      const inner = accordion.querySelector('.accordion-inner');
+      accordion.style.maxHeight = `${inner ? inner.offsetHeight : accordion.scrollHeight}px`;
+      accordion.querySelectorAll('.accordion-item').forEach(item => {
+        item.style.opacity       = '1';
+        item.style.transform     = 'translateY(0px)';
+        item.style.pointerEvents = 'auto';
+      });
+      label.textContent = 'Read Less -';
+    } else {
+      accordion.style.maxHeight = '0px';
+      label.textContent = 'Read More +';
+    }
+  });
+
+  resetAccordion = () => {
+    if (!isOpen) return;
+    isOpen = false;
+    accordion.querySelectorAll('.accordion-item').forEach(item => {
+      item.style.opacity       = '0';
+      item.style.pointerEvents = 'none';
+    });
+    setTimeout(() => {
+      accordion.style.maxHeight = '0px';
+      accordion.querySelectorAll('.accordion-item').forEach(item => {
+        item.style.transform = 'translateY(24px)';
+      });
+    }, DURATION);
+    label.textContent = 'Read More +';
   };
 }
 
