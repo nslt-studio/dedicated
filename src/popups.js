@@ -16,6 +16,7 @@ let dealCloseTimer = null;
 let touchEndHandled  = false;
 let resetFilters     = null;
 let resetAccordion   = null;
+const panelTimers    = {}; // id → [timeoutId, ...]
 
 export function initPopups() {
   // Bloque tous les descendants de .grid (pointer-events: none ne cascade pas naturellement)
@@ -44,8 +45,11 @@ export function initPopups() {
     const item = target.closest('.grid-item[data-deal], .index-item[data-deal]');
     if (item) { openDeal(item.dataset.deal); return; }
 
-    // Deal : clic en dehors du deal-item actif
-    if (activeDeal) {
+    const clickedNavButton = Object.keys(CONFIG).some(id => document.querySelector(id)?.contains(target));
+
+    // Deal : clic en dehors du deal-item actif — sauf si on clique un bouton nav
+    // (onButtonClick gère déjà la fermeture du deal sans reset du dim dans ce cas)
+    if (activeDeal && !clickedNavButton) {
       const dealItemEl = document.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
       if (dealItemEl && !dealItemEl.contains(target)) closeDeal();
     }
@@ -54,8 +58,7 @@ export function initPopups() {
     if (!activeId) return;
     const panelEl = document.querySelector(CONFIG[activeId].panel);
     if (!panelEl) return;
-    const clickedButton = Object.keys(CONFIG).some(id => document.querySelector(id)?.contains(target));
-    if (!panelEl.contains(target) && !clickedButton) closeAll();
+    if (!panelEl.contains(target) && !clickedNavButton) closeAll();
   }
 
   // Tracking drag pour distinguer tap et scroll hors grid-list
@@ -83,7 +86,12 @@ export function initPopups() {
     tapMoved = false;
 
     if (inGrid) {
-      // Géré par animations.js via click synthétique qui respecte hasDragged
+      // Tap sur un deal : géré ici avec seuil 8px (plus souple que hasDragged 4px)
+      // touchEndHandled=true bloque le click synthétique éventuel d'animations.js
+      if (!wasDrag) {
+        const item = target?.closest('.grid-item[data-deal]');
+        if (item) { touchEndHandled = true; openDeal(item.dataset.deal); }
+      }
       return;
     }
 
@@ -130,14 +138,14 @@ function openDeal(name) {
   });
 }
 
-function closeDeal() {
+function closeDeal(keepDim = false) {
   const dealEl = document.querySelector('.deal');
   if (!dealEl || !activeDeal) return;
 
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
   activeDeal = null;
   setDealFrozen(false);
-  setBgDim(false);
+  if (!keepDim) setBgDim(false);
 
   if (dealItem) {
     dealItem.style.pointerEvents = 'none';
@@ -240,6 +248,9 @@ function onButtonClick(id) {
     return;
   }
 
+  // Ferme le deal sans reset du dim (un panel va s'ouvrir juste après)
+  if (activeDeal) closeDeal(true);
+
   if (activeId) closePanel(activeId);
 
   activeId = id;
@@ -249,18 +260,25 @@ function onButtonClick(id) {
   animateIn(id);
 }
 
+function clearPanelTimers(id) {
+  (panelTimers[id] || []).forEach(clearTimeout);
+  panelTimers[id] = [];
+}
+
 function animateIn(id) {
   const { panel, items } = CONFIG[id];
   const panelEl = document.querySelector(panel);
   if (!panelEl) return;
 
+  clearPanelTimers(id);
   panelEl.style.pointerEvents = 'auto';
   panelEl.querySelectorAll(items).forEach((item, i) => {
-    setTimeout(() => {
+    const t = setTimeout(() => {
       item.style.opacity       = '1';
       item.style.transform     = 'translateY(0px)';
       item.style.pointerEvents = 'auto';
     }, i * STAGGER);
+    panelTimers[id].push(t);
   });
 }
 
@@ -269,6 +287,7 @@ function closePanel(id) {
   const panelEl = document.querySelector(panel);
   if (!panelEl) return;
 
+  clearPanelTimers(id);
   if (id === '#aboutButton') resetAccordion?.();
 
   panelEl.querySelectorAll(items).forEach(item => {
@@ -276,12 +295,13 @@ function closePanel(id) {
     item.style.pointerEvents = 'none';
   });
 
-  setTimeout(() => {
+  const t = setTimeout(() => {
     panelEl.style.pointerEvents = 'none';
     panelEl.querySelectorAll(items).forEach(item => {
       item.style.transform = 'translateY(24px)';
     });
   }, DURATION);
+  panelTimers[id] = [t];
 }
 
 function setButtonsOpacity(activeButtonId) {
