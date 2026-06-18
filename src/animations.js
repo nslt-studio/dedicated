@@ -13,6 +13,10 @@ const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus le
 const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
 const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
 const PRIORITY_COUNT = 6;       // nb de premiers items à placer dans la zone visible
+const HOVER_SCALE    = 1.05;    // scale au survol
+const SCALE_EASE     = 0.10;    // vitesse de lerp du scale
+const DRAG_SCALE      = 0.95;  // scale du canvas au grab
+const DRAG_SCALE_EASE = 0.10;  // vitesse de lerp du drag scale
 
 function calcCanvasSize(items, viewW, viewH) {
   const n    = items.length;
@@ -89,6 +93,11 @@ function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priori
 
   dedupeAdjacent(assigned, cols);
 
+  // Stagger par colonne : chaque colonne reçoit une fraction aléatoire de rangeY.
+  // Garantit un gap min de 2×FLOAT_RADIUS entre items de lignes adjacentes
+  // (preuve : gap = cellH - item.h ≥ 2×pad, indépendamment de la fraction colonne).
+  const colFrac = Array.from({ length: cols }, () => Math.random());
+
   return assigned.map((item, i) => {
     const col    = i % cols;
     const row    = Math.floor(i / cols);
@@ -96,7 +105,7 @@ function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priori
     const cellY  = EDGE_MARGIN + row * cellH;
     const rangeX = Math.max(0, cellW - item.w - pad * 2);
     const rangeY = Math.max(0, cellH - item.h - pad * 2);
-    return { ...item, x: cellX + pad + Math.random() * rangeX, y: cellY + pad + Math.random() * rangeY };
+    return { ...item, x: cellX + pad + Math.random() * rangeX, y: cellY + pad + colFrac[col] * rangeY };
   });
 }
 
@@ -144,7 +153,9 @@ class InfiniteGrid {
     this.hasDragged          = false;
     this.touchStartedOnGrid  = false;
     this.mouse            = { x: { t: 0.5, c: 0.5 }, y: { t: 0.5, c: 0.5 }, press: { t: 0, c: 0 } };
-    this.isDragging = false;
+    this.isDragging  = false;
+    this.dragScaleC  = 1;
+    this.dragScaleT  = 1;
     this.items         = [];
     this.tileSize      = { w: 0, h: 0 };
     this.introStartTime = null;
@@ -255,6 +266,12 @@ class InfiniteGrid {
           ay + base.h > 0 && ay < this.winH;
         const fp = floatProps[i];
 
+        if (!el._hoverBound) {
+          el.addEventListener('mouseenter', () => { el._hovered = true; });
+          el.addEventListener('mouseleave', () => { el._hovered = false; });
+          el._hoverBound = true;
+        }
+
         this.items.push({
           el,
           x: ax, y: ay, w: base.w, h: base.h,
@@ -267,6 +284,7 @@ class InfiniteGrid {
           floatPhase:  fp.phase,
           floatFreq:   fp.freq,
           floatRadius: fp.radius,
+          scaleC: 1,
         });
       });
     });
@@ -346,6 +364,10 @@ class InfiniteGrid {
     this.mouse.y.c     += (this.mouse.y.t     - this.mouse.y.c)     * LERP_EASE;
     this.mouse.press.c += (this.mouse.press.t - this.mouse.press.c) * 0.1;
 
+    this.dragScaleT = this.isDragging ? DRAG_SCALE : 1;
+    this.dragScaleC += (this.dragScaleT - this.dragScaleC) * DRAG_SCALE_EASE;
+    this.$list.style.transform = `scale(${(zoomScale * this.dragScaleC).toFixed(5)})`;
+
     const pad  = zoomScale < 1 ? (1 / zoomScale - 1) / 2 : 0;
     const bX   = this.winW * pad;
     const bY   = this.winH * pad;
@@ -383,7 +405,8 @@ class InfiniteGrid {
       const fx = item.x + this.scroll.current.x + item.extraX + px + vx + ix + floatX;
       const fy = item.y + this.scroll.current.y + item.extraY + py + vy + iy + floatY;
 
-      item.el.style.transform = `translate(${fx}px, ${fy}px)`;
+      item.scaleC += ((item.el._hovered ? HOVER_SCALE : 1) - item.scaleC) * SCALE_EASE;
+      item.el.style.transform = `translate(${fx}px, ${fy}px) scale(${item.scaleC.toFixed(4)})`;
     });
 
     this.scroll.last.x = this.scroll.current.x;
