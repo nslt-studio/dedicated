@@ -114,6 +114,7 @@ let scrollSpeed  = 1; // compensé dynamiquement : getZoomDefaults().normal / zo
 let gridInstance = null;
 let frozenByHover = false;
 let frozenByDeal  = false;
+const zoomChangeListeners = [];
 
 export function setDealFrozen(frozen) {
   frozenByDeal = frozen;
@@ -123,6 +124,12 @@ export function setZoomScale(s) {
   zoomScale    = s;
   scrollSpeed  = getZoomDefaults().normal / s;
   gridInstance?.retile();
+  zoomChangeListeners.forEach(cb => cb(s));
+}
+
+// Permet à l'UI du slider (.cursor) de rester synchro quand le zoom change ailleurs (pinch tactile)
+export function onZoomChange(cb) {
+  zoomChangeListeners.push(cb);
 }
 
 export function getZoomDefaults() {
@@ -152,6 +159,9 @@ class InfiniteGrid {
     this.inertiaVel       = { x: 0, y: 0 };
     this.hasDragged          = false;
     this.touchStartedOnGrid  = false;
+    this.isPinching      = false;
+    this.pinchStartDist  = 0;
+    this.pinchStartScale = 1;
     this.mouse            = { x: { t: 0.5, c: 0.5 }, y: { t: 0.5, c: 0.5 }, press: { t: 0, c: 0 } };
     this.isDragging  = false;
     this.dragScaleC  = 1;
@@ -414,8 +424,24 @@ class InfiniteGrid {
     requestAnimationFrame(this.render);
   }
 
+  getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
   onTouchStart(e) {
     e.preventDefault();
+
+    if (e.touches.length === 2) {
+      this.isPinching      = true;
+      this.isDragging       = false;
+      this.touchStartedOnGrid = false;
+      this.pinchStartDist   = this.getTouchDistance(e.touches);
+      this.pinchStartScale  = zoomScale;
+      return;
+    }
+
     const t = e.touches[0];
     this.touchStartedOnGrid = true;
     this.isDragging   = true;
@@ -430,6 +456,18 @@ class InfiniteGrid {
   }
 
   onTouchMove(e) {
+    if (this.isPinching) {
+      if (e.touches.length < 2) return;
+      e.preventDefault();
+      const dist = this.getTouchDistance(e.touches);
+      const { normal, zoomed } = getZoomDefaults();
+      const min = Math.min(normal, zoomed);
+      const max = Math.max(normal, zoomed);
+      const scale = Math.max(min, Math.min(max, this.pinchStartScale * (dist / this.pinchStartDist)));
+      setZoomScale(scale);
+      return;
+    }
+
     if (!this.isDragging) return;
     e.preventDefault();
     const t = e.touches[0];
@@ -444,6 +482,11 @@ class InfiniteGrid {
   }
 
   onTouchEnd(e) {
+    if (this.isPinching) {
+      if (e.touches.length < 2) this.isPinching = false;
+      return;
+    }
+
     const startedOnGrid     = this.touchStartedOnGrid;
     this.touchStartedOnGrid = false;
     this.isDragging         = false;

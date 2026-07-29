@@ -1,4 +1,4 @@
-import { setZoomScale, getZoomDefaults, setDealFrozen } from './animations.js';
+import { setZoomScale, getZoomDefaults, setDealFrozen, onZoomChange } from './animations.js';
 
 const STAGGER = 100;
 const DURATION = 300;
@@ -64,12 +64,15 @@ export function initPopups() {
   // Tracking drag pour distinguer tap et scroll hors grid-list
   let tapStart = null;
   let tapMoved = false;
+  let tapMulti = false; // pinch (2 doigts) : jamais interprété comme un tap
   document.addEventListener('touchstart', e => {
+    if (e.touches.length > 1) { tapMulti = true; return; }
     const t = e.touches[0];
     tapStart = { x: t.clientX, y: t.clientY };
     tapMoved = false;
   }, { passive: true });
   document.addEventListener('touchmove', e => {
+    if (e.touches.length > 1) { tapMulti = true; return; }
     if (!tapStart) return;
     const t = e.touches[0];
     if (Math.abs(t.clientX - tapStart.x) > 8 || Math.abs(t.clientY - tapStart.y) > 8)
@@ -78,12 +81,15 @@ export function initPopups() {
 
   // touchend sur document pour iOS (click ne fire pas sur les divs non-interactives)
   document.addEventListener('touchend', e => {
+    if (e.touches.length > 0) return; // attend que tous les doigts soient levés (pinch)
+
     const touch   = e.changedTouches[0];
     const target  = document.elementFromPoint(touch.clientX, touch.clientY);
     const inGrid  = !!target?.closest('.grid-list');
-    const wasDrag = tapMoved;
+    const wasDrag = tapMoved || tapMulti;
     tapStart = null;
     tapMoved = false;
+    tapMulti = false;
 
     if (inGrid) {
       // Tap sur un deal : géré ici avec seuil 8px (plus souple que hasDragged 4px)
@@ -369,6 +375,14 @@ function initZoomCursor() {
     dragging = false;
     gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
   }
+
+  // Garde le slider synchro quand le zoom change ailleurs (pinch tactile sur le canvas)
+  onZoomChange(scale => {
+    if (dragging) return;
+    const t    = (scale - normal) / (zoomedScale - normal);
+    cursorLeft = Math.max(CURSOR_MIN, Math.min(CURSOR_MAX, CURSOR_MIN + t * (CURSOR_MAX - CURSOR_MIN)));
+    if (cursor) cursor.style.setProperty('left', `${cursorLeft}px`, 'important');
+  });
 
   btn.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientX); });
   window.addEventListener('mousemove', e => moveDrag(e.clientX));

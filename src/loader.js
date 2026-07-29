@@ -1,7 +1,7 @@
 const INITIAL_DELAY      = 600;  // ms avant d'animer les headlines
 const HEADLINE_STAGGER   = 100;  // ms entre chaque headline
 const HEADLINE_TRANS     = 300;  // durée de la transition CSS des headlines (ms)
-const HOLD_DELAY         = 900;  // ms d'attente après la dernière headline
+const HOLD_DELAY         = 1500;  // ms d'attente après la dernière headline
 const HEADLINE_FADE_OUT  = 300;  // ms pour faire disparaître les headlines
 const LOADER_FADE        = 600;  // durée de la transition opacity du loader (ms, définie en CSS)
 
