@@ -110,6 +110,7 @@ export function initPopups() {
   initFilterTags();
   initFiltersPanel();
   initAboutAccordion();
+  initReadMore();
 }
 
 function openDeal(name) {
@@ -560,6 +561,18 @@ function initAboutAccordion() {
     }, DURATION);
     label.textContent = 'Read More +';
   };
+}
+
+function initReadMore() {
+  document.querySelectorAll('[data-button="readMore"]').forEach(button => {
+    const text = button.previousElementSibling;
+    if (!text || text.dataset.text !== 'richText') return;
+
+    button.addEventListener('click', () => {
+      text.classList.toggle('is-open');
+      button.textContent = text.classList.contains('is-open') ? 'Read less' : 'Read more';
+    });
+  });
 }
 
 function setNavInvert(inverted) {

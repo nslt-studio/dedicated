@@ -127,7 +127,7 @@ export function setZoomScale(s) {
 
 export function getZoomDefaults() {
   return window.innerWidth <= 767
-    ? { normal: 0.60, zoomed: 0.2 }
+    ? { normal: 0.75, zoomed: 0.3 }
     : { normal: 1,    zoomed: 0.4  };
 }
 
