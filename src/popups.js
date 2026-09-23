@@ -1,4 +1,4 @@
-import { setZoomScale, getZoomDefaults, setDealFrozen, onZoomChange } from './animations.js';
+import { setZoomScale, getZoomDefaults, setDealFrozen, onZoomChange, setGridPaused } from './animations.js';
 
 const STAGGER = 100;
 const DURATION = 300;
@@ -21,7 +21,19 @@ const panelTimers    = {}; // id → [timeoutId, ...]
 export function initPopups() {
   // Bloque tous les descendants de .grid (pointer-events: none ne cascade pas naturellement)
   const dimStyle = document.createElement('style');
-  dimStyle.textContent = '.grid-dimmed, .grid-dimmed * { pointer-events: none !important; }';
+  dimStyle.textContent = '.grid-dimmed, .grid-dimmed * { pointer-events: none !important; }'
+    // .index-inner (34 items x 2 faces = 68 éléments) a `perspective` + `transition-property:
+    // transform` en permanence dans le CSS Webflow (flip-card jamais réellement déclenché : pas
+    // de règle :hover qui l'anime). Sur iOS, ça pousse chaque élément en pré-composition GPU, et
+    // le rapport Jetsam confirme une fuite mémoire massive (2,3 Go, kill "per-process-limit") liée
+    // au scroll dans .index. On neutralise ces hints : aucun effet visuel, rien ne les anime.
+    + ' .index-inner { will-change: auto !important; transition-property: none !important; perspective: none !important; }'
+    // CAUSE CONFIRMÉE : .index scrolle en étirant body/html (scroll natif de toute la page), ce
+    // qui fait bouger la barre d'adresse Safari sur iOS — chaque mouvement déclenche un "resize"
+    // que le runtime Webflow traite en recalculant des styles, saturant le CPU (98%+ observé) et
+    // faisant planter l'onglet. En rendant .index scrollable EN INTERNE (au lieu du body), la page
+    // ne bouge plus jamais et la barre d'adresse reste fixe — plus de tempête de resize.
+    + ' .index { bottom: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }';
   document.head.appendChild(dimStyle);
 
   Object.keys(CONFIG).forEach(id => {
@@ -192,6 +204,7 @@ function initViewToggle() {
 
     grid?.style.setProperty('opacity', '0');
     grid?.classList.add('grid-dimmed');
+    setGridPaused(true);
     if (gridList) gridList.style.pointerEvents = 'none';
     if (zoomDiv) { zoomDiv.style.opacity = '0'; zoomDiv.style.transform = 'translateY(24px)'; zoomDiv.style.pointerEvents = 'none'; }
     if (filtersDiv) { filtersDiv.style.opacity = '1'; filtersDiv.style.transform = 'translateY(0%)'; filtersDiv.style.pointerEvents = 'auto'; }
@@ -240,6 +253,7 @@ function initViewToggle() {
     activeView = 'grid';
     grid?.style.setProperty('opacity', '1');
     if (!activeId && !activeDeal) grid?.classList.remove('grid-dimmed');
+    setGridPaused(!!(activeId || activeDeal));
     if (gridList) gridList.style.pointerEvents = 'auto';
     if (zoomDiv) { zoomDiv.style.opacity = '1'; zoomDiv.style.transform = 'translateY(0px)'; zoomDiv.style.pointerEvents = 'auto'; }
     if (filtersDiv) { filtersDiv.style.opacity = '0'; filtersDiv.style.transform = 'translateY(-100%)'; filtersDiv.style.pointerEvents = 'none'; }
@@ -607,7 +621,9 @@ function setBgDim(active) {
     el.style.pointerEvents = pointer;
   });
   // .grid et tous ses descendants bloqués via classe CSS quand popup ouverte ou vue index
-  if (grid) grid.classList.toggle('grid-dimmed', !!(active || activeView === 'index'));
+  const gridHidden = !!(active || activeView === 'index');
+  if (grid) grid.classList.toggle('grid-dimmed', gridHidden);
+  setGridPaused(gridHidden);
   // .index et tous ses descendants bloqués quand un panel/deal est ouvert en vue liste
   const indexEl = document.querySelector('.index');
   if (indexEl) indexEl.classList.toggle('grid-dimmed', !!(active && activeView === 'index'));

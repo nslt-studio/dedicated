@@ -114,10 +114,26 @@ let scrollSpeed  = 1; // compensé dynamiquement : getZoomDefaults().normal / zo
 let gridInstance = null;
 let frozenByHover = false;
 let frozenByDeal  = false;
+let gridPaused    = false;
 const zoomChangeListeners = [];
 
 export function setDealFrozen(frozen) {
   frozenByDeal = frozen;
+}
+
+// Coupe entièrement la boucle RAF du grid (plus aucun style.transform écrit, sur aucun item)
+// quand le grid est masqué (vue index, panel ou deal ouvert). Le rapport Jetsam a confirmé une
+// fuite mémoire massive (2,3 Go, kill "per-process-limit") pendant un scroll dans .index — cette
+// boucle tournait en continu même à ce moment-là, en concurrence avec la recomposition du scroll
+// natif de la page. Retire aussi will-change (sinon chaque item du grid garde sa propre couche
+// GPU active même masqué).
+export function setGridPaused(paused) {
+  if (paused === gridPaused) return;
+  gridPaused = paused;
+  if (gridInstance) {
+    gridInstance.items.forEach(item => { item.el.style.willChange = paused ? 'auto' : 'transform'; });
+    if (!paused) requestAnimationFrame(gridInstance.render);
+  }
 }
 
 export function setZoomScale(s) {
@@ -349,6 +365,7 @@ class InfiniteGrid {
   }
 
   render(ts) {
+    if (gridPaused) return;
     if (!this.introStartTime && ts) this.introStartTime = ts;
 
     if (!this.isDragging) {
