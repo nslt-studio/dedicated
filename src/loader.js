@@ -1,16 +1,16 @@
-const INITIAL_DELAY      = 600;  // ms avant d'animer les headlines
-const HEADLINE_STAGGER   = 100;  // ms entre chaque headline
-const HEADLINE_TRANS     = 300;  // durée de la transition CSS des headlines (ms)
-const HOLD_DELAY         = 1500;  // ms d'attente après la dernière headline
-const HEADLINE_FADE_OUT  = 300;  // ms pour faire disparaître les headlines
-const LOADER_FADE        = 600;  // durée de la transition opacity du loader (ms, définie en CSS)
+const INITIAL_DELAY      = 600;  // ms before headlines start animating
+const HEADLINE_STAGGER   = 100;  // ms between each headline
+const HEADLINE_TRANS     = 300;  // headline CSS transition duration (ms)
+const HOLD_DELAY         = 1500;  // ms to hold after the last headline
+const HEADLINE_FADE_OUT  = 300;  // ms for headlines to fade out
+const LOADER_FADE        = 600;  // loader opacity transition duration (ms, set in CSS)
 
 export function initLoader() {
   const loader    = document.querySelector('.loader');
   const headlines = [...document.querySelectorAll('.headline')];
   if (!loader) return;
 
-  // 1. Stagger headlines IN
+  // Stagger headlines in
   headlines.forEach((el, i) => {
     setTimeout(() => {
       el.style.opacity   = '1';
@@ -18,13 +18,13 @@ export function initLoader() {
     }, INITIAL_DELAY + i * HEADLINE_STAGGER);
   });
 
-  // Moment où la dernière headline a fini d'apparaître
+  // When the last headline finishes appearing
   const allInAt = INITIAL_DELAY
     + (headlines.length - 1) * HEADLINE_STAGGER
     + HEADLINE_TRANS
     + HOLD_DELAY;
 
-  // 2. Fade out headlines en stagger
+  // Stagger headlines out
   headlines.forEach((el, i) => {
     setTimeout(() => {
       el.style.opacity   = '0';
@@ -32,7 +32,7 @@ export function initLoader() {
     }, allInAt + i * HEADLINE_STAGGER);
   });
 
-  // 3. Fade out loader après la dernière headline + sa transition
+  // Fade out the loader once the last headline is done
   const allOutAt = allInAt + (headlines.length - 1) * HEADLINE_STAGGER + HEADLINE_FADE_OUT;
   setTimeout(() => {
     loader.style.opacity = '0';

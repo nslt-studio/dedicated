@@ -19,26 +19,17 @@ let resetAccordion   = null;
 const panelTimers    = {}; // id → [timeoutId, ...]
 
 export function initPopups() {
-  // Bloque tous les descendants de .grid (pointer-events: none ne cascade pas naturellement)
+  // Blocks all .grid descendants (pointer-events: none doesn't cascade on its own)
   const dimStyle = document.createElement('style');
   dimStyle.textContent = '.grid-dimmed, .grid-dimmed * { pointer-events: none !important; }'
-    // .index-inner (34 items x 2 faces = 68 éléments) a `perspective` + `transition-property:
-    // transform` en permanence dans le CSS Webflow (flip-card jamais réellement déclenché : pas
-    // de règle :hover qui l'anime). Sur iOS, ça pousse chaque élément en pré-composition GPU, et
-    // le rapport Jetsam confirme une fuite mémoire massive (2,3 Go, kill "per-process-limit") liée
-    // au scroll dans .index. On neutralise ces hints : aucun effet visuel, rien ne les anime.
+    // Unused flip-card hints that pre-composite .index-inner into GPU layers, leaked memory on iOS
     + ' .index-inner { will-change: auto !important; transition-property: none !important; perspective: none !important; }'
-    // CAUSE CONFIRMÉE : .index scrolle en étirant body/html (scroll natif de toute la page), ce
-    // qui fait bouger la barre d'adresse Safari sur iOS — chaque mouvement déclenche un "resize"
-    // que le runtime Webflow traite en recalculant des styles, saturant le CPU (98%+ observé) et
-    // faisant planter l'onglet. En rendant .index scrollable EN INTERNE (au lieu du body), la page
-    // ne bouge plus jamais et la barre d'adresse reste fixe — plus de tempête de resize.
+    // Scroll .index internally — stretching body/html moved Safari's URL bar and crashed the tab on iOS
     + ' .index { bottom: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }';
   document.head.appendChild(dimStyle);
 
-  Object.keys(CONFIG).forEach(id => {
-    document.querySelector(id)?.addEventListener('click', () => onButtonClick(id));
-  });
+  // 34 full-size .deal-item otherwise stay laid out permanently even when never opened
+  document.querySelectorAll('.deal-item').forEach(el => { el.style.display = 'none'; });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
@@ -50,33 +41,36 @@ export function initPopups() {
   function handleInteraction(target) {
     if (!target) return;
 
-    // Deal : bouton fermeture
+    // Nav buttons: routed through touchend — iOS can skip the synthetic click after a tap with slight movement
+    const navId = Object.keys(CONFIG).find(id => document.querySelector(id)?.contains(target));
+    if (navId) { onButtonClick(navId); return; }
+
+    // Deal: close button
     if (target.closest('.deal-close') && activeDeal) { closeDeal(); return; }
 
-    // Deal : clic sur un item
+    // Deal: click on an item
     const item = target.closest('.grid-item[data-deal], .index-item[data-deal]');
     if (item) { openDeal(item.dataset.deal); return; }
 
     const clickedNavButton = Object.keys(CONFIG).some(id => document.querySelector(id)?.contains(target));
 
-    // Deal : clic en dehors du deal-item actif — sauf si on clique un bouton nav
-    // (onButtonClick gère déjà la fermeture du deal sans reset du dim dans ce cas)
+    // Deal: click outside it, unless a nav button was clicked (onButtonClick handles that case)
     if (activeDeal && !clickedNavButton) {
       const dealItemEl = document.querySelector(`.deal-item[data-deal="${activeDeal}"]`);
       if (dealItemEl && !dealItemEl.contains(target)) closeDeal();
     }
 
-    // Popups : clic en dehors
+    // Popup: click outside
     if (!activeId) return;
     const panelEl = document.querySelector(CONFIG[activeId].panel);
     if (!panelEl) return;
     if (!panelEl.contains(target) && !clickedNavButton) closeAll();
   }
 
-  // Tracking drag pour distinguer tap et scroll hors grid-list
+  // Tracks drag to distinguish a tap from a scroll outside grid-list
   let tapStart = null;
   let tapMoved = false;
-  let tapMulti = false; // pinch (2 doigts) : jamais interprété comme un tap
+  let tapMulti = false; // pinch (2 fingers): never treated as a tap
   document.addEventListener('touchstart', e => {
     if (e.touches.length > 1) { tapMulti = true; return; }
     const t = e.touches[0];
@@ -91,9 +85,9 @@ export function initPopups() {
       tapMoved = true;
   }, { passive: true });
 
-  // touchend sur document pour iOS (click ne fire pas sur les divs non-interactives)
+  // touchend on document: click doesn't fire on non-interactive divs on iOS
   document.addEventListener('touchend', e => {
-    if (e.touches.length > 0) return; // attend que tous les doigts soient levés (pinch)
+    if (e.touches.length > 0) return; // wait for all fingers up (pinch)
 
     const touch   = e.changedTouches[0];
     const target  = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -103,9 +97,12 @@ export function initPopups() {
     tapMoved = false;
     tapMulti = false;
 
+    // Nav button tap: never cancelled by the drag threshold
+    const navId = Object.keys(CONFIG).find(id => document.querySelector(id)?.contains(target));
+    if (navId) { touchEndHandled = true; onButtonClick(navId); return; }
+
     if (inGrid) {
-      // Tap sur un deal : géré ici avec seuil 8px (plus souple que hasDragged 4px)
-      // touchEndHandled=true bloque le click synthétique éventuel d'animations.js
+      // Deal tap: touchEndHandled blocks animations.js's synthetic click
       if (!wasDrag) {
         const item = target?.closest('.grid-item[data-deal]');
         if (item) { touchEndHandled = true; openDeal(item.dataset.deal); }
@@ -117,7 +114,7 @@ export function initPopups() {
     if (!wasDrag) handleInteraction(target);
   }, { passive: true });
 
-  // click pour desktop — ignoré si déjà traité par touchend
+  // Desktop click — ignored if touchend already handled it
   document.addEventListener('click', e => {
     if (touchEndHandled) { touchEndHandled = false; return; }
     handleInteraction(e.target);
@@ -146,6 +143,7 @@ function openDeal(name) {
   const dealItem = dealEl.querySelector(`.deal-item[data-deal="${name}"]`);
   if (!dealItem) return;
 
+  dealItem.style.display       = 'flex';
   dealItem.style.pointerEvents = 'auto';
   const staggerEls = [...dealItem.querySelectorAll('.deal-inner, .deal-close')];
   staggerEls.forEach((el, i) => {
@@ -173,6 +171,7 @@ function closeDeal(keepDim = false) {
       dealCloseTimer = null;
       dealEl.style.pointerEvents = 'none';
       dealItem.querySelectorAll('.deal-inner, .deal-close').forEach(el => { el.style.transform = el.classList.contains('deal-close') ? 'translate(-50%, 24px)' : 'translateY(24px)'; });
+      dealItem.style.display = 'none';
     }, DURATION);
   }
 }
@@ -211,6 +210,7 @@ function initViewToggle() {
 
     if (indexPanel) {
       indexPanel.style.display = 'block';
+      indexPanel.scrollTop = 0; // avoid staggering in off-screen if left scrolled down
       resetFilters?.();
       const items = [...indexPanel.querySelectorAll('.index-item')];
       // Reset to initial state instantly before animating in
@@ -269,7 +269,7 @@ function onButtonClick(id) {
     return;
   }
 
-  // Ferme le deal sans reset du dim (un panel va s'ouvrir juste après)
+  // Close the deal without resetting the dim — a panel opens right after
   if (activeDeal) closeDeal(true);
 
   if (activeId) closePanel(activeId);
@@ -293,7 +293,9 @@ function animateIn(id) {
 
   clearPanelTimers(id);
   panelEl.style.pointerEvents = 'auto';
+  panelEl.scrollTop = 0; // avoid staggering in off-screen if left scrolled down
   panelEl.querySelectorAll(items).forEach((item, i) => {
+    item.style.display = ''; // back in the render tree before animating (closePanel removed it)
     const t = setTimeout(() => {
       item.style.opacity       = '1';
       item.style.transform     = 'translateY(0px)';
@@ -320,6 +322,7 @@ function closePanel(id) {
     panelEl.style.pointerEvents = 'none';
     panelEl.querySelectorAll(items).forEach(item => {
       item.style.transform = 'translateY(24px)';
+      item.style.display   = 'none'; // up to 28 items otherwise stay laid out permanently
     });
   }, DURATION);
   panelTimers[id] = [t];
@@ -390,7 +393,7 @@ function initZoomCursor() {
     gridList.style.transition = 'transform 450ms cubic-bezier(.23, 1, .32, 1)';
   }
 
-  // Garde le slider synchro quand le zoom change ailleurs (pinch tactile sur le canvas)
+  // Keeps the slider in sync when zoom changes elsewhere (touch pinch on the canvas)
   onZoomChange(scale => {
     if (dragging) return;
     const t    = (scale - normal) / (zoomedScale - normal);
@@ -433,6 +436,7 @@ function initFiltersPanel() {
     isOpen = true;
     panel.style.pointerEvents = 'auto';
     [...innerItems].reverse().forEach((el, i) => {
+      el.style.display = '';
       setTimeout(() => {
         el.style.opacity       = '1';
         el.style.transform     = 'translateY(0px)';
@@ -448,7 +452,7 @@ function initFiltersPanel() {
     innerItems.forEach(el => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; });
     setTimeout(() => {
       panel.style.pointerEvents = 'none';
-      innerItems.forEach(el => { el.style.transform = 'translateY(24px)'; });
+      innerItems.forEach(el => { el.style.transform = 'translateY(24px)'; el.style.display = 'none'; });
     }, DURATION);
     label.textContent = 'Show Filters';
     filtersDiv.style.filter = 'invert(0%)';
@@ -467,7 +471,6 @@ function initFiltersPanel() {
     if (isOpen && !panel.contains(e.target) && e.target !== btn) closeFilters();
   });
 
-  // Filter buttons
   const filterBtns = [...panel.querySelectorAll('[data-filter]')];
   let activeFilter  = null;
 
@@ -479,7 +482,7 @@ function initFiltersPanel() {
     });
   }
 
-  // Masquer les tags-filter-item sans résultats
+  // Hide tags-filter-item with no matches
   const allIndexItems = [...document.querySelectorAll('.index-item')];
   filterBtns.forEach(b => {
     const hasMatch = allIndexItems.some(item => itemMatchesFilter(item, filterText(b)));
@@ -554,7 +557,6 @@ function initAboutAccordion() {
 
   accordion.style.overflow   = 'hidden';
   accordion.style.maxHeight  = '0px';
-  //accordion.style.transition = 'max-height 0.4s ease';
 
   btn.addEventListener('click', e => {
     e.stopPropagation();
@@ -620,11 +622,11 @@ function setBgDim(active) {
     el.style.opacity       = opacity;
     el.style.pointerEvents = pointer;
   });
-  // .grid et tous ses descendants bloqués via classe CSS quand popup ouverte ou vue index
+  // .grid blocked via CSS class when a popup or index view is active
   const gridHidden = !!(active || activeView === 'index');
   if (grid) grid.classList.toggle('grid-dimmed', gridHidden);
   setGridPaused(gridHidden);
-  // .index et tous ses descendants bloqués quand un panel/deal est ouvert en vue liste
+  // .index blocked when a panel/deal is open while in index view
   const indexEl = document.querySelector('.index');
   if (indexEl) indexEl.classList.toggle('grid-dimmed', !!(active && activeView === 'index'));
   if (controls) {

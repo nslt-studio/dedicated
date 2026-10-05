@@ -1,22 +1,22 @@
 const SCROLL_EASE    = 0.6;
 const LERP_EASE      = 0.04;
-const MAX_GAP_X      = 140;  // espace max entre items axe horizontal (px)
-const MAX_GAP_Y      = 100;  // espace max entre items axe vertical (px)
+const MAX_GAP_X      = 140;  // max horizontal gap between items (px)
+const MAX_GAP_Y      = 100;  // max vertical gap between items (px)
 const MAX_GAP_X_MOB  = 60;   // mobile
 const MAX_GAP_Y_MOB  = 40;   // mobile
-const EDGE_MARGIN    = 24;   // marge depuis les bords du canvas (px)
-const INTRO_DURATION = 0.6;  // durée de l'animation d'entrée (s)
-const INTRO_STAGGER  = 0.025; // délai entre chaque item (s)
-const FRICTION       = 0.95; // décroissance de la vélocité de drag par frame
-const FLOAT_RADIUS   = 30;      // rayon max du cercle de flottement (px)
-const FLOAT_FREQ_MIN = 0.00015; // vitesse min de rotation (plus petit = plus lent)
-const FLOAT_FREQ_MAX = 0.0003;  // vitesse max
-const AUTO_SCROLL    = 0.2;     // scroll automatique vers le bas (px/frame)
-const PRIORITY_COUNT = 6;       // nb de premiers items à placer dans la zone visible
-const HOVER_SCALE    = 1.05;    // scale au survol
-const SCALE_EASE     = 0.10;    // vitesse de lerp du scale
-const DRAG_SCALE      = 0.95;  // scale du canvas au grab
-const DRAG_SCALE_EASE = 0.10;  // vitesse de lerp du drag scale
+const EDGE_MARGIN    = 24;   // margin from canvas edges (px)
+const INTRO_DURATION = 0.6;  // intro animation duration (s)
+const INTRO_STAGGER  = 0.025; // delay between each item (s)
+const FRICTION       = 0.95; // drag velocity decay per frame
+const FLOAT_RADIUS   = 30;      // max float circle radius (px)
+const FLOAT_FREQ_MIN = 0.00015; // min rotation speed (smaller = slower)
+const FLOAT_FREQ_MAX = 0.0003;  // max rotation speed
+const AUTO_SCROLL    = 0.2;     // auto-scroll downward (px/frame)
+const PRIORITY_COUNT = 6;       // first N items placed in the visible area
+const HOVER_SCALE    = 1.05;    // scale on hover
+const SCALE_EASE     = 0.10;    // scale lerp speed
+const DRAG_SCALE      = 0.95;  // canvas scale while grabbed
+const DRAG_SCALE_EASE = 0.10;  // drag scale lerp speed
 
 function calcCanvasSize(items, viewW, viewH) {
   const n    = items.length;
@@ -60,19 +60,19 @@ function dedupeAdjacent(arr, cols) {
   }
 }
 
-// Placement dans une grille — pad = FLOAT_RADIUS de chaque côté de la cellule
-// garantit un écart min de 2×FLOAT_RADIUS entre items adjacents (pas de chevauchement au flottement)
-// Les `priorityCount` premiers items sont placés en priorité dans les cellules visibles à l'écran.
+// Grid placement — pad = FLOAT_RADIUS on each side of the cell guarantees a min 2×FLOAT_RADIUS
+// gap between adjacent items (no overlap while floating). The first `priorityCount` items get
+// placed in cells visible on screen at load.
 function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priorityCount = 0) {
   const cellW = (canvasW - EDGE_MARGIN * 2) / cols;
   const cellH = (canvasH - EDGE_MARGIN * 2) / rows;
   const pad   = FLOAT_RADIUS;
 
-  // Sépare les items prioritaires (premiers de la liste DOM) du reste
+  // Priority items (first in DOM order) vs the rest
   const priority = items.slice(0, priorityCount).sort(() => Math.random() - 0.5);
   const rest     = items.slice(priorityCount).sort(() => Math.random() - 0.5);
 
-  // Identifie les positions de cellule visibles au chargement (scroll=0)
+  // Cell positions visible at load (scroll=0)
   const visiblePos = [];
   const otherPos   = [];
   for (let i = 0; i < items.length; i++) {
@@ -85,7 +85,7 @@ function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priori
     }
   }
 
-  // Assigne : items prioritaires → positions visibles d'abord, puis autres
+  // Priority items go to visible positions first, then the rest
   const positions = [...visiblePos, ...otherPos];
   const ordered   = [...priority, ...rest];
   const assigned  = new Array(items.length);
@@ -93,9 +93,8 @@ function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priori
 
   dedupeAdjacent(assigned, cols);
 
-  // Stagger par colonne : chaque colonne reçoit une fraction aléatoire de rangeY.
-  // Garantit un gap min de 2×FLOAT_RADIUS entre items de lignes adjacentes
-  // (preuve : gap = cellH - item.h ≥ 2×pad, indépendamment de la fraction colonne).
+  // Per-column stagger: each column gets a random fraction of rangeY, keeping a min
+  // 2×FLOAT_RADIUS gap between adjacent rows regardless of the fraction.
   const colFrac = Array.from({ length: cols }, () => Math.random());
 
   return assigned.map((item, i) => {
@@ -110,31 +109,58 @@ function gridPlacement(items, canvasW, canvasH, cols, rows, viewW, viewH, priori
 }
 
 let zoomScale    = 1;
-let scrollSpeed  = 1; // compensé dynamiquement : getZoomDefaults().normal / zoomScale
+let scrollSpeed  = 1; // dynamically compensated: getZoomDefaults().normal / zoomScale
 let gridInstance = null;
 let frozenByHover = false;
 let frozenByDeal  = false;
-let gridPaused    = false;
 const zoomChangeListeners = [];
 
 export function setDealFrozen(frozen) {
   frozenByDeal = frozen;
 }
 
-// Coupe entièrement la boucle RAF du grid (plus aucun style.transform écrit, sur aucun item)
-// quand le grid est masqué (vue index, panel ou deal ouvert). Le rapport Jetsam a confirmé une
-// fuite mémoire massive (2,3 Go, kill "per-process-limit") pendant un scroll dans .index — cette
-// boucle tournait en continu même à ce moment-là, en concurrence avec la recomposition du scroll
-// natif de la page. Retire aussi will-change (sinon chaque item du grid garde sa propre couche
-// GPU active même masqué).
-export function setGridPaused(paused) {
-  if (paused === gridPaused) return;
-  gridPaused = paused;
-  if (gridInstance) {
-    gridInstance.items.forEach(item => { item.el.style.willChange = paused ? 'auto' : 'transform'; });
-    if (!paused) requestAnimationFrame(gridInstance.render);
+// Stops the grid's RAF loop and releases will-change (each item + its 4 infinite-scroll clones
+// otherwise keep their own GPU layer alive permanently, ~100+ layers total). Two independent
+// reasons can request a pause: the active view (.index/panel/deal, driven from popups.js) and an
+// in-progress resize (driven here) — the grid only runs when neither is blocking it.
+let pausedByView   = false;
+let pausedByResize = false;
+let gridPaused     = false;
+
+function applyGridPaused() {
+  const paused = pausedByView || pausedByResize;
+  if (paused !== gridPaused) {
+    gridPaused = paused;
+    if (gridInstance) {
+      gridInstance.items.forEach(item => { item.el.style.willChange = paused ? 'auto' : 'transform'; });
+      if (!paused) requestAnimationFrame(gridInstance.render);
+    }
   }
+  // display:none on the container drops the whole subtree at once, forcing those GPU layers to
+  // actually free up (will-change alone just stops updating them). Resize-only: view changes
+  // keep the existing opacity fade.
+  if (gridInstance) gridInstance.$list.style.display = pausedByResize ? 'none' : '';
 }
+
+export function setGridPaused(paused) {
+  pausedByView = paused;
+  applyGridPaused();
+}
+
+// A real orientation change can't be avoided, but the browser has to recomposite the whole page
+// at once — with ~100+ GPU layers permanently on the grid, that can spike CPU and crash Safari on
+// iPhone. Pause on the first "resize" and release once it settles (~200ms of silence): one
+// recalculation at the end instead of one per event.
+let resizeSettleTimer = null;
+window.addEventListener('resize', () => {
+  pausedByResize = true;
+  applyGridPaused();
+  clearTimeout(resizeSettleTimer);
+  resizeSettleTimer = setTimeout(() => {
+    pausedByResize = false;
+    applyGridPaused();
+  }, 200);
+});
 
 export function setZoomScale(s) {
   zoomScale    = s;
@@ -143,7 +169,7 @@ export function setZoomScale(s) {
   zoomChangeListeners.forEach(cb => cb(s));
 }
 
-// Permet à l'UI du slider (.cursor) de rester synchro quand le zoom change ailleurs (pinch tactile)
+// Keeps the slider UI (.cursor) in sync when zoom changes elsewhere (touch pinch)
 export function onZoomChange(cb) {
   zoomChangeListeners.push(cb);
 }
@@ -241,7 +267,7 @@ class InfiniteGrid {
     const { w: tileW, h: tileH, cols, rows } = calcCanvasSize(sizes, this.winW, this.winH);
     this.tileSize = { w: tileW * 2, h: tileH * 2 };
 
-    // Remplir toutes les cellules — cloner les items manquants pour éviter les zones vides
+    // Fill every cell — clone missing items so there are no empty gaps
     const allSizes = [...sizes];
     while (allSizes.length < cols * rows) {
       const src = sizes[allSizes.length % sizes.length];
@@ -267,7 +293,7 @@ class InfiniteGrid {
       b.el.style.willChange = 'transform';
     });
 
-    // Propriétés de flottement — identiques pour les 4 copies d'un même item
+    // Float properties — same for all 4 copies of a given item
     const floatProps = baseItems.map(() => ({
       phase:  Math.random() * Math.PI * 2,
       freq:   FLOAT_FREQ_MIN + Math.random() * (FLOAT_FREQ_MAX - FLOAT_FREQ_MIN),
