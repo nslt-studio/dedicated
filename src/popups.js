@@ -121,6 +121,7 @@ export function initPopups() {
     handleInteraction(e.target);
   });
 
+  setNavInvert(null); // move the invert from .nav to each block before any interaction
   initViewToggle();
   initZoomCursor();
   initFilterTags();
@@ -182,7 +183,7 @@ function closeAll() {
   activeId = null;
   setButtonsOpacity(null);
   setBgDim(false);
-  setNavInvert(true);
+  setNavInvert(null);
 }
 
 function initViewToggle() {
@@ -278,7 +279,7 @@ function onButtonClick(id) {
   activeId = id;
   setButtonsOpacity(id);
   setBgDim(true);
-  setNavInvert(false);
+  setNavInvert(id);
   animateIn(id);
 }
 
@@ -329,10 +330,17 @@ function closePanel(id) {
   panelTimers[id] = [t];
 }
 
+// Nav block (.nav-item) holding a button — Team/News/About share one, Inquiry has its own
+function navGroup(id) {
+  return document.querySelector(id)?.closest('.nav-item') || null;
+}
+
+// Dims only the other buttons of the active button's own nav block
 function setButtonsOpacity(activeButtonId) {
+  const group = activeButtonId ? navGroup(activeButtonId) : null;
   Object.keys(CONFIG).forEach(id => {
     const btn = document.querySelector(id);
-    if (btn) btn.style.opacity = activeButtonId && id !== activeButtonId ? '0.35' : '1';
+    if (btn) btn.style.opacity = group && id !== activeButtonId && navGroup(id) === group ? '0.35' : '1';
   });
 }
 
@@ -606,9 +614,17 @@ function initReadMore() {
   });
 }
 
-function setNavInvert(inverted) {
+// Inverts each nav block on its own (Webflow's invert sits on .nav as a whole):
+// only the block holding the active button switches to its active look
+function setNavInvert(activeButtonId) {
   const nav = document.querySelector('.nav');
-  if (nav) nav.style.filter = inverted ? 'invert(100%)' : 'invert(0%)';
+  if (!nav) return;
+  nav.style.filter = 'none';
+  const group = activeButtonId ? navGroup(activeButtonId) : null;
+  nav.querySelectorAll(':scope > .nav-item').forEach(item => {
+    item.style.transition = 'filter 300ms ease';
+    item.style.filter     = item === group ? 'invert(0%)' : 'invert(100%)';
+  });
 }
 
 function setBgDim(active) {
