@@ -7,6 +7,7 @@ const CONFIG = {
   '#newsButton':  { panel: '.news',  items: '.news-item' },
   '#aboutButton': { panel: '.about', items: '.about-item' },
   '#teamButton':  { panel: '.team',  items: '.team-item' },
+  '#inquiryButton': { panel: '#form', items: '.form-item' },
 };
 
 let activeId       = null;
